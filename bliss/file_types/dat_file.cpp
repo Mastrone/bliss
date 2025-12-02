@@ -117,7 +117,7 @@ void bliss::write_scan_hits_to_dat_file(scan scan_with_hits, std::string_view fi
                         "# -------------------------- o --------------------------\n"
                         "# Source:{}\n"
                         "# MJD: {}\tRA: {}s\tDEC:{}\n"
-                        "# DELTAT: {:6f}\tDELTAF(Hz):  {:6f} max_drift_rate: {}\tobs_length: {:2f}\n"
+                        "# DELTAT: {:6f}\tDELTAF(Hz):  {:6f}\tmax_drift_rate: {}\tobs_length: {:2f}\n"
                         "# --------------------------\n"
                         "# "
                         "Top_Hit_#\tDrift_Rate\tSNR\tUncorrected_Frequency\tCorrected_Frequency\tIndex\tfreq_start\tfreq_end\tSEFD_freq\tCoarse_Channel_Number\tFull_number_of_hits\n"

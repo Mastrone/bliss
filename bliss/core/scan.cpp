@@ -226,9 +226,11 @@ std::shared_ptr<coarse_channel> bliss::scan::read_coarse_channel(int coarse_chan
         auto global_start_fine_channel = _fine_channels_per_coarse * global_offset_in_file;
         data_offset[2] = global_start_fine_channel;
 
-        // fmt::print("DEBUG: reading data from coarse channel {} which translates to offset {} + count {}\n",
-        //            global_offset_in_file,
-        //            data_offset,
+        fmt::print("DEBUG: reading data from coarse channel {} which translates to offset {} + count {}\n",
+                  global_offset_in_file,
+                  data_offset,
+                  data_count[0]);
+                  
         auto data_reader = [h5_file_handle = this->_h5_file_handle, data_offset, data_count]() {
             return h5_file_handle->read_data(data_offset, data_count);
         };
@@ -314,6 +316,9 @@ std::string bliss::scan::get_file_path() const {
 }
 
 std::list<hit> bliss::scan::hits() {
+
+    fmt::print("\n=== RUN 1: Esecuzione Pipeline (Ricerca Hits) ===\n");
+    
     std::list<hit> all_hits;
     int            number_coarse_channels = get_number_coarse_channels();
     for (int cc_index = 0; cc_index < number_coarse_channels; ++cc_index) {
@@ -331,6 +336,9 @@ std::list<hit> bliss::scan::hits() {
 }
 
 std::pair<float, float> bliss::scan::get_drift_range() {
+
+    fmt::print("\n=== RUN 2: Esecuzione Pipeline (BUG: Solo per Header) ===\n");
+
     std::pair<float, float> drift_range = {0, 0};
     int            number_coarse_channels = get_number_coarse_channels();
     for (int cc_index = 0; cc_index < number_coarse_channels; ++cc_index) {

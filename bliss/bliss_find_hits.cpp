@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
                     fmt::print("{}\n", h.repr());
                 }
             } else {
-                bliss::write_scan_hits_to_file(sc, output_path, output_format);
+                bliss::write_scan_hits_to_file(sc, output_path, output_format, dedrift_options.high_rate_Hz_per_sec);
             }
         }
     // } catch (std::exception &e) {

@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
                 long number_drifts = std::lround(std::abs(rounded_high - rounded_low) / std::abs(search_step));
                 double precise_max_drift = rounded_low + (number_drifts - 1) * std::abs(search_step);
                 
-                double final_max_drift = std::round(precise_max_drift * 1e6) / 1e6;
+                double final_max_drift = std::round(precise_max_drift * 1e7) / 1e7;
 
                 bliss::write_scan_hits_to_file(sc, output_path, output_format, final_max_drift);
                   }

@@ -1,4 +1,3 @@
-
 #include "core/noise_power.hpp"
 
 #include <bland/bland.hpp>
@@ -10,6 +9,7 @@
 using namespace bliss;
 
 float bliss::noise_stats::noise_power() {
+    // Ensure the value is accessible on CPU before scalarizing.
     return bland::to(_noise_power, "cpu").scalarize<float>();
 }
 
@@ -18,6 +18,7 @@ void bliss::noise_stats::set_noise_power(bland::ndarray power) {
 }
 
 float bliss::noise_stats::noise_amplitude() {
+    // Amplitude is derived as sqrt(power).
     return std::sqrt(bland::to(_noise_power, "cpu").scalarize<float>());
 }
 

@@ -6,25 +6,26 @@
 namespace bliss {
 
 /**
- * Spectral kurtosis is the time-domain kurtosis (4th order standardized moment) of a frequency
- * channel. This accepts spectra (X = |FFT(x)|) which has already been squared, so the spectral
- * kurtsosis is estimated with the estimator
+ * @brief Computes the Spectral Kurtosis (SK) estimator for a spectrum.
  *
- * SK = (M N d + 1)/(M-1) * (M S_2 / S_1^2 -1)
+ * @details Spectral kurtosis is a statistical measure used to detect Radio Frequency Interference (RFI).
+ * Natural Gaussian noise has a specific kurtosis value (related to `d` and `N`). Man-made signals
+ * often deviate significantly from this value.
  *
- * d is 1
- * N is the number of spectrograms already averaged per spectra we receive
- * M is the number of spectra in this population to estimate kurtosis over (commonly 8, 16, or 32)
+ * The estimator used is the "Generalized Spectral Kurtosis Estimator" (Nita & Gary, 2010):
+ * \f[ SK = \frac{M N d + 1}{M-1} \left( \frac{M S_2}{S_1^2} - 1 \right) \f]
  *
- * derived in "The Generalized Spectral Kurtosis Estimator" by Nita, G. M and Gary, D. E.
- * available at https://arxiv.org/abs/1005.4371
- *
- * The non-averaged estimator (N=1) and background derivation can be found in
- * "Radio Frequency Interference Excision Using Spectral-Domain Statistics"
- *
+ * @param spectrum_grid Input 2D spectrogram (Time x Frequency).
+ * @param N Number of raw samples averaged per spectral bin (Integration factor).
+ * @param M Number of time samples used for the estimate (Window size).
+ * @param d Gamma distribution parameter (typically 2.0 for power spectra).
+ * @return An array containing the SK value for each frequency channel.
  */
 [[nodiscard]] bland::ndarray estimate_spectral_kurtosis(const bland::ndarray &spectrum_grid, int32_t N, int32_t M, float d = 2.0);
 
+/**
+ * @brief Helper to estimate SK for a coarse channel using its metadata.
+ */
 [[nodiscard]] bland::ndarray estimate_spectral_kurtosis(coarse_channel &cc_data, float d = 2.0);
 
 

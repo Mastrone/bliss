@@ -1,5 +1,3 @@
-
-
 #include "estimators/noise_estimate.hpp"
 #include <bland/ops/ops.hpp>
 #include <bland/ops/ops_statistical.hpp>
@@ -12,8 +10,8 @@ using namespace bliss;
 namespace detail {
 
 /**
- * Compute noise floor as the mean of the population
- * Compute noise power as the variance of the population
+ * @brief Compute noise stats using standard mean and variance.
+ * @details Sensitive to outliers if not masked.
  */
 noise_stats noise_power_estimate_stddev(bland::ndarray x) {
     noise_stats estimated_stats;
@@ -25,8 +23,8 @@ noise_stats noise_power_estimate_stddev(bland::ndarray x) {
 }
 
 /**
- * Compute noise floor as the mean of the population where the mask == 0
- * Compute noise power as the variance of the population where the mask == 0
+ * @brief Compute noise stats using masked mean and variance.
+ * @details Calculates statistics only on samples where mask == 0 (unflagged).
  */
 noise_stats noise_power_estimate_stddev(bland::ndarray x, bland::ndarray mask) {
     noise_stats estimated_stats;
@@ -38,8 +36,10 @@ noise_stats noise_power_estimate_stddev(bland::ndarray x, bland::ndarray mask) {
 }
 
 /**
- * Compute noise floor using the median over the population
- * Compute noise power using the Median Absolute Deviation (MAD) over the population
+ * @brief Compute noise stats using Median and MAD.
+ * @details Robust against outliers.
+ * floor = median(x)
+ * power = median(|x - median|)
  */
 noise_stats noise_power_estimate_mad(const bland::ndarray &x) {
     noise_stats estimated_stats;
@@ -55,8 +55,8 @@ noise_stats noise_power_estimate_mad(const bland::ndarray &x) {
 }
 
 /**
- * TODO: this is equivalent to the non masked noise_power_estimate_mad until improved support
- * for the mask operation can be done
+ * @brief Masked MAD estimation.
+ * @warning NOT IMPLEMENTED YET. Throws exception.
  */
 noise_stats noise_power_estimate_mad(const bland::ndarray &x, const bland::ndarray &mask) {
 
@@ -98,9 +98,13 @@ noise_stats bliss::estimate_noise_power(bland::ndarray x, noise_power_estimate_o
 }
 
 /**
- * validate & correct a flag mask
+ * @brief Validates and corrects a flag mask before estimation.
  *
- * If the mask has no free flags
+ * @details If a mask is completely full (all samples flagged), it's impossible to estimate
+ * the noise floor. This function detects this condition and throws an error, as this usually
+ * indicates a critical data quality issue (e.g., severe RFI saturation).
+ *
+ * @throws std::runtime_error if 100% of samples are masked.
  */
 bland::ndarray correct_mask(const bland::ndarray &mask) {
 
@@ -114,8 +118,8 @@ bland::ndarray correct_mask(const bland::ndarray &mask) {
         * about this pipeline output should probably be made aware of it, but it's also not fatal.
         * Known instances of this condition occurring:
         * * Voyager 2020 data from GBT experiences a sudden increase in noise floor/power of ~ 3dB in the B target scan
-        *   which generates high spectral kurtosis across the entire band
-        *   filename w/in BL: single_coarse_guppi_59046_80354_DIAG_VOYAGER-1_0012.rawspec.0000.h5
+        * which generates high spectral kurtosis across the entire band
+        * filename w/in BL: single_coarse_guppi_59046_80354_DIAG_VOYAGER-1_0012.rawspec.0000.h5
         */
         // TODO: we can attempt to correct this, since it's only been known to occur based on SK with high thresholds of
         // ~5 that threshold can be increased. Some ideas:
@@ -131,14 +135,13 @@ bland::ndarray correct_mask(const bland::ndarray &mask) {
 }
 
 
-/**
- * This is the masked equivalent of noise power estimate
- */
 noise_stats bliss::estimate_noise_power(coarse_channel cc_data, noise_power_estimate_options options) {
     noise_stats estimated_stats;
     if (options.masked_estimate) {
         // Check the mask will give us something valid
         auto mask = cc_data.mask();
+        
+        // This call will throw if the mask is 100% flagged
         cc_data.set_mask(correct_mask(mask));
 
         switch (options.estimator_method) {

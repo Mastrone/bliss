@@ -1,4 +1,3 @@
-
 #include <preprocess/passband_static_equalize.hpp>
 
 #include <bland/ndarray.hpp>
@@ -13,6 +12,11 @@
 
 using namespace bliss;
 
+/**
+ * @brief Generates a Hamming window of size N.
+ * @param N The number of points in the window.
+ * @return A vector containing the window coefficients.
+ */
 std::vector<float> hamming_window(int N) {
     auto N_float = static_cast<float>(N-1);
     constexpr float two_pi = 2 * M_PI;
@@ -27,8 +31,12 @@ std::vector<float> hamming_window(int N) {
     return w;
 }
 
+/**
+ * @brief Computes the normalized sinc function: sin(pi*x)/(pi*x).
+ */
 float sinc(float t) {
     auto x = M_PI*t;
+    // Taylor series approximation for small x to avoid division by zero instability
     if (std::fabs(x) < 0.01f) {
         return cos(x/2.0f) * cos(x/4.0f) * cos(x/8.0f);
     } else {
@@ -36,6 +44,11 @@ float sinc(float t) {
     }
 }
 
+/**
+ * @brief Generates a Sinc Low-Pass Filter kernel.
+ * @param fc The cutoff frequency (normalized 0..1).
+ * @param num_taps The number of filter taps.
+ */
 std::vector<float> sinc_lpf(float fc, int num_taps) {
     // fc in range 0..1
 
@@ -50,14 +63,14 @@ std::vector<float> sinc_lpf(float fc, int num_taps) {
 }
 
 bland::ndarray bliss::firdes(int num_taps, float fc, std::string_view window) {
-    // Hard code hamming for now
+    // Hard code hamming for now as the default window
     auto h_prototype = sinc_lpf(fc, num_taps);
-    auto w = hamming_window(num_taps); // TODO: look up other windows
+    auto w = hamming_window(num_taps); // TODO: look up other windows based on string_view
 
     auto h = bland::ndarray({num_taps}, bland::ndarray::datatype::float32, bland::ndarray::dev::cpu);
     auto h_ptr = h.data_ptr<float>();
     for (int n=0; n < num_taps; ++n) {
-        h_ptr[n] = h_prototype[n] *  w[n];
+        h_ptr[n] = h_prototype[n] * w[n];
     }
 
     return h;
@@ -67,8 +80,7 @@ bland::ndarray bliss::gen_coarse_channel_response(int fine_per_coarse, int num_c
     // Get taps
     int num_taps = taps_per_channel * num_coarse_channels;
 
-    // A typically channelizer for frequency analysis will specify cutoff to be
-    // the channel width
+    // A typical channelizer for frequency analysis will specify cutoff to be the channel width
     auto h = firdes(num_taps, 1.0f/static_cast<float>(num_coarse_channels), window);
 
     // Zero-pad to full rate (need to know the number of coarse channels in original recording)
@@ -77,11 +89,14 @@ bland::ndarray bliss::gen_coarse_channel_response(int fine_per_coarse, int num_c
     int64_t full_res_length = static_cast<int64_t>(num_coarse_channels * fine_per_coarse);
     auto h_padded = bland::zeros({full_res_length});
 
+    // Copy the filter into the padded array
     h_padded.slice(bland::slice_spec{0, 0, h.size(0)}) = h;
 
     // compute magnitude response (fft -> abs -> square)
-    // h_padded = h_padded.to("cuda:0");
-    // bland::write_to_file(h, "padded_h_from_firdes.cuda_f32");
+    // The FFT of the impulse response gives the frequency response
+    // h_padded = h_padded.to("cuda:0"); // Optional optimization
+    // bland::write_to_file(h, "padded_h_from_firdes.cuda_f32"); // Debug
+    
     auto H = bland::fft_shift_mag_square(h_padded);
 
     // bland::write_to_file(H, "H_full_magsquare.cuda_f32");
@@ -94,12 +109,16 @@ bland::ndarray bliss::gen_coarse_channel_response(int fine_per_coarse, int num_c
     // bland::write_to_file(H_slice, "H_slice_magsquare.cuda_f32");
     // bland::write_to_file(H, "H_sliced_magsquare.cuda_f32");
 
+    // Reshape to stack the coarse channels
     H.reshape({number_coarse_channels_contributing, fine_per_coarse});
 
     // bland::write_to_file(H, "H_sliced_reshaped_magsquare.cuda_f32");
 
-    H = bland::sum(H, {0}); // sum all of the energy from adjacent channels that folds back in
-    H = H/bland::max(H); // normalize
+    // Sum all of the energy from adjacent channels that folds back in (aliasing)
+    H = bland::sum(H, {0}); 
+    
+    // Normalize to max 1.0
+    H = H/bland::max(H); 
 
     // bland::write_to_file(H, "H_normalized.cuda_f32");
 
@@ -107,7 +126,7 @@ bland::ndarray bliss::gen_coarse_channel_response(int fine_per_coarse, int num_c
 }
 
 coarse_channel bliss::equalize_passband_filter(coarse_channel cc, bland::ndarray H, bool validate) {
-    // Validate that the mean of the passband is 2x the mean of the cutoff
+    // Validate that the mean of the passband is roughly consistent with expected ratios
     // TODO: this could check the ratios of the filter response and force them to be equal
 
     if (validate) {
@@ -141,7 +160,11 @@ coarse_channel bliss::equalize_passband_filter(coarse_channel cc, bland::ndarray
                        H_ratio);
         }
     }
+    
+    // Ensure H is on the same device as the channel data
     H = H.to(cc.device());
+    
+    // Apply equalization: Data / Filter_Response
     cc.set_data(bland::divide(cc.data(), H));
     return cc;
 }
@@ -172,7 +195,14 @@ observation_target bliss::equalize_passband_filter(observation_target ot, bland:
 
 observation_target bliss::equalize_passband_filter(observation_target ot, std::string_view h_resp_filepath, bland::ndarray::datatype dtype, bool validate) {
     auto h = bland::read_from_file(h_resp_filepath, dtype);
-    h = h.to(ot.device());
+    
+    // Determine target device from the first available scan, default to CPU
+    bland::ndarray::dev target_device = bland::ndarray::dev::cpu;
+    if (!ot._scans.empty()) {
+        target_device = ot._scans[0].device();
+    }
+    
+    h = h.to(target_device);
     return equalize_passband_filter(ot, h, validate);
 }
 

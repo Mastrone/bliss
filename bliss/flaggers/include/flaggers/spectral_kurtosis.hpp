@@ -7,47 +7,42 @@
 namespace bliss {
 
 /**
- * return a mask with flags set for grid elements which have non gaussian spectral kurtosis
- * 
- * Spectral kurtosis is the time-domain kurtosis (4th order standardized moment) of a frequency
- * channel. This accepts spectra (X = |FFT(x)|) which has already been squared, so the spectral
- * kurtsosis is estimated with the estimator
- * 
- * SK = (M N d + 1)/(M-1) * (M S_2 / S_1^2 -1)
- * 
- * d is a parameter of the gamma function used to describe the power spectrum
- * N is the number of spectrograms already averaged per spectra we receive
- * M is the number of spectra in this population to estimate kurtosis over (commonly 8, 16, or 32)
- * 
- * derived in "The Generalized Spectral Kurtosis Estimator" by Nita, G. M and Gary, D. E.
- * available at https://arxiv.org/abs/1005.4371
- * 
- * The non-averaged estimator (N=1) and background derivation can be found in
- * "Radio Frequency Interference Excision Using Spectral-Domain Statistics"
-*/
+ * @brief Computes Spectral Kurtosis (SK) flags to identify non-Gaussian signals.
+ * * @details Spectral kurtosis measures the variability of the signal power over time.
+ * RFI (man-made signals) often has a different statistical distribution than
+ * natural Gaussian noise (e.g., radar pulses are highly non-Gaussian).
+ * * The estimator used is:
+ * SK = (M N d + 1)/(M-1) * (M S_2 / S_1^2 - 1)
+ * * Where:
+ * - d: Parameter of the gamma function describing the power spectrum (usually 2).
+ * - N: Number of spectrograms averaged (time integration factor).
+ * - M: Number of spectra used for the kurtosis estimate.
+ * * Reference: Nita, G. M and Gary, D. E. "The Generalized Spectral Kurtosis Estimator" (2010).
+ * * @param data Input spectrogram.
+ * @param N Integration factor.
+ * @param M Estimation window size.
+ * @param d Gamma parameter (default 2).
+ * @param lower_threshold Lower bound for valid SK.
+ * @param upper_threshold Upper bound for valid SK.
+ * @return A mask with `low_spectral_kurtosis` or `high_spectral_kurtosis` flags.
+ */
 bland::ndarray flag_spectral_kurtosis(const bland::ndarray &data, int64_t N, int64_t M, float d=2, float lower_threshold=0.25, float upper_threshold=50);
 
 /**
- * Flag the filterbank data based on spectral kurtosis bounds and return the flagged filterbank
-*/
+ * @brief Applies Spectral Kurtosis flagging to a coarse channel.
+ * @details Automatically calculates N and M based on channel metadata (tsamp, foff).
+ */
 coarse_channel flag_spectral_kurtosis(coarse_channel channel_data, float lower_threshold=0.05f, float upper_threshold=50.f, float d=2);
 
 /**
- * Flag the filterbank data based on spectral kurtosis bounds and return the flagged filterbank
- * 
- * TODO: make this work on *all* coarse channels in a filterbank, it might be useful to
+ * @brief Applies SK flagging to an entire scan.
+ * @details TODO: make this work on *all* coarse channels in a filterbank, it might be useful to
  * defer computing perhaps with a future 
-*/
+ */
 scan flag_spectral_kurtosis(scan fb_data, float lower_threshold=0.25f, float upper_threshold=50.f, float d=2);
 
-/**
- * Flag all filterbanks in an observation target
-*/
 observation_target flag_spectral_kurtosis(observation_target observations, float lower_threshold=0.25f, float upper_threshold=50.f, float d=2);
 
-/**
- * Flag all filterbanks in the cadence with given SK estimate
-*/
 cadence flag_spectral_kurtosis(cadence cadence_data, float lower_threshold=0.25f, float upper_threshold=50.f, float d=2);
 
 } // namespace bliss

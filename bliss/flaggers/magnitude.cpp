@@ -1,4 +1,3 @@
-
 #include <core/flag_values.hpp>
 #include <flaggers/magnitude.hpp>
 
@@ -7,20 +6,16 @@
 using namespace bliss;
 
 bland::ndarray bliss::flag_magnitude(const bland::ndarray &data, float threshold) {
+    // Boolean comparison broadcast over the array, cast to flag enum
     auto magnitude_mask = (data > threshold) * static_cast<uint8_t>(flag_values::magnitude);
     return magnitude_mask;
 }
 
-
-/**
- * return a mask with flags set for grid elements which have very large magnitudes
- * 
-*/
 coarse_channel bliss::flag_magnitude(coarse_channel cc_data, float threshold) {
     auto magnitude_mask = flag_magnitude(cc_data.data(), threshold);
 
     bland::ndarray mask = cc_data.mask();
-    mask = mask + magnitude_mask;
+    mask = mask + magnitude_mask; // Accumulate flags
     cc_data.set_mask(mask);
     return cc_data;
 }
@@ -28,15 +23,14 @@ coarse_channel bliss::flag_magnitude(coarse_channel cc_data, float threshold) {
 coarse_channel bliss::flag_magnitude(coarse_channel cc_data) {
     auto data = cc_data.data();
 
+    // Auto-calculate threshold statistics
     auto mean = bland::mean(data).scalarize<float>();
     auto stddev = bland::stddev(data).scalarize<float>();
+    
+    // Heuristic: 10 sigma is a very safe upper bound for "clean" noise
     return flag_magnitude(cc_data, mean + 10*stddev);
 }
 
-/**
- * return a mask with flags set for grid elements which have very large magnitudes
- * 
-*/
 scan bliss::flag_magnitude(scan fil_data, float threshold) {
     auto number_coarse_channels = fil_data.get_number_coarse_channels();
     for (auto cc_index = 0; cc_index < number_coarse_channels; ++cc_index) {

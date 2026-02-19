@@ -30,6 +30,7 @@ add_executable(bliss_find_hits bliss_find_hits.cpp)
 target_link_libraries(
   bliss_find_hits
   PUBLIC bliss_core
+         file_types
          bliss_preprocess
          drift_search
          estimators

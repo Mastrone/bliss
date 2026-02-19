@@ -14,7 +14,6 @@ target_link_libraries(bliss_core
     PUBLIC
     bland
     PRIVATE
-    file_types
     fmt::fmt-header-only
 )
 

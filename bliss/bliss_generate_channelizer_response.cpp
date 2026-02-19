@@ -1,4 +1,3 @@
-
 #include <core/scan.hpp>
 #include <core/cadence.hpp>
 
@@ -14,6 +13,24 @@
 #include <iostream>
 #include "clipp.h"
 
+/**
+ * @brief Tool to generate the expected frequency response of a PFB Channelizer.
+ * * @details This program calculates the magnitude response of a coarse channel
+ * given the parameters of the polyphase filterbank (PFB) used by the telescope.
+ * The output is a binary file (float32 array) representing the channel shape,
+ * which can be used by `bliss_find_hits` (via the `-e` flag) to equalize
+ * the spectrum, flattening the bandpass and removing the characteristic "scalloping".
+ *
+ * Algorithm Steps:
+ * 1. Generate prototype filter taps (Windowed Sinc).
+ * 2. Zero-pad to fine-channel resolution.
+ * 3. Compute FFT magnitude squared (Power response).
+ * 4. Fold and sum (Aliasing simulation).
+ *
+ * Common Configurations:
+ * - ATA: 2048 coarse channels, 4 taps/channel.
+ * - GBT: 256 coarse channels, 12 taps/channel.
+ */
 int main(int argc, char *argv[]) {
 
     std::string out_file = "channelizer_response.f32";
@@ -22,6 +39,7 @@ int main(int argc, char *argv[]) {
     int nchan_per_coarse = 1048576;
     int taps_per_channel = 12;
     bool help = false;
+    
     auto cli = (
         (
             // Filter design specs
@@ -65,8 +83,9 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // auto h_resp = bliss::gen_coarse_channel_response(131072, 2048, 4);
+    // Call the core library function to generate the response array
     auto h_resp = bliss::gen_coarse_channel_response(nchan_per_coarse, number_coarse_channels, taps_per_channel);
 
+    // Save to disk
     bland::write_to_file(h_resp, out_file);
 }

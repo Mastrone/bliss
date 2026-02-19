@@ -1,6 +1,6 @@
-
 #include "cpnp_hit_builder.hpp"
 #include <core/hit.hpp>
+#include <core/coarse_channel.hpp> // Assicurati che questo sia incluso per la definizione completa
 
 using namespace bliss;
 using namespace bliss::detail;
@@ -24,7 +24,7 @@ void bliss::detail::bliss_hit_to_capnp_signal_message(Signal::Builder &signal_bu
     signal_builder.setBandwidth(this_hit.bandwidth);
     signal_builder.setBinwidth(this_hit.binwidth);
     // These currently aren't in the capn proto definition to be serialized
-    // rfi     rfi_counts;
+    // rfi      rfi_counts;
 }
 
 hit bliss::detail::capnp_signal_message_to_bliss_hit(const Signal::Reader &signal_reader) {
@@ -72,7 +72,7 @@ void bliss::detail::bliss_coarse_channel_to_capnp_coarse_channel_message(CoarseC
     auto   hits_builder = cc_builder.initHits(hits.size());
     size_t hit_index    = 0;
     for (const auto &hit : hits) {
-        // auto this_hit    = hits[hit_index];
+        // auto this_hit     = hits[hit_index];
         auto this_signal = hits_builder[hit_index];
         detail::bliss_hit_to_capnp_signal_message(this_signal, hit);
         ++hit_index;
@@ -85,23 +85,27 @@ bliss::detail::capnp_coarse_channel_message_to_bliss_coarse_channel(CoarseChanne
     auto md   = coarse_channel_reader.getMd();
     auto hits = coarse_channel_reader.getHits();
 
-    auto deserialized_cc = coarse_channel(md.getFch1(),
-                                          md.getFoff(),
-                                          0 /* machine_id */,
-                                          32 /* nbits */,
-                                          md.getNumChannels() /* nchans */,
-                                          md.getNumTimesteps() /* nsteps */,
-                                          0 /* nifs */,
-                                          md.getSourceName(),
-                                          md.getDec(),
-                                          md.getRa(),
-                                          md.getTelescopeId(),
-                                          md.getTsamp(),
-                                          md.getTstart(),
-                                          1 /* data_type */,
-                                          0 /* az_start */,
-                                          0 /* za_start */
-    );
+    // MODIFICA: Creiamo e popoliamo la struct scan_metadata
+    scan_metadata meta;
+    meta.fch1        = md.getFch1();
+    meta.foff        = md.getFoff();
+    meta.machine_id  = 0; // default o non presente in capnp
+    meta.nbits       = 32; // default o non presente in capnp
+    meta.nchans      = md.getNumChannels();
+    meta.ntsteps     = md.getNumTimesteps();
+    meta.nifs        = 0; // default
+    meta.source_name = md.getSourceName();
+    meta.src_dej     = md.getDec();
+    meta.src_raj     = md.getRa();
+    meta.telescope_id = md.getTelescopeId();
+    meta.tsamp       = md.getTsamp();
+    meta.tstart      = md.getTstart();
+    meta.data_type   = 1; // default float32
+    meta.az_start    = 0; // default
+    meta.za_start    = 0; // default
+
+    // Usiamo il nuovo costruttore che accetta la struct
+    auto deserialized_cc = coarse_channel(meta);
 
     std::list<hit> deserialized_hits;
 

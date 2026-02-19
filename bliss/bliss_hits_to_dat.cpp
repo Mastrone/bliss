@@ -1,4 +1,3 @@
-
 #include <file_types/cpnp_files.hpp>
 #include <file_types/dat_file.hpp>
 
@@ -23,6 +22,12 @@ namespace fs = std::experimental::filesystem;
 
 #include "clipp.h"
 
+/**
+ * @brief Utility to convert binary hits files to text format.
+ * * @details Converts Cap'n Proto serialized hit files (produced by `bliss_find_hits`)
+ * into the legacy .dat format compatible with TurboSETI. This is useful for
+ * interoperability and manual inspection of results.
+ */
 int main(int argc, char *argv[]) {
 
     std::string input_file;
@@ -49,20 +54,25 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    // Auto-determine output filename
     if (output_path.empty()) {
         auto path = fs::path(input_file);
         output_path = path.filename().replace_extension("dat");
     }
 
-    // How can we discover which type of capnp message/file this is?
+    // 1. Read binary hits
     auto scan_with_hits = bliss::read_scan_hits_from_capnp_file(input_file);
     auto hits = scan_with_hits.hits();
+    
+    // 2. Output
     if (output_path == "-" || output_path == "stdout") {
+        // Print to stdout for piping
         fmt::print("Got {} hits\n", hits.size());
         for (auto &h : hits) {
             std::cout << h.repr() << std::endl;
         }
     } else {
+        // Write to file
         bliss::write_scan_hits_to_dat_file(scan_with_hits, output_path);
     }
 

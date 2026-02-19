@@ -20,8 +20,22 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
+// --- Forward Declarations of Factory Shims ---
+// These helper functions (implemented in pybliss.cpp) bridge the gap between
+// Python's file-path strings and C++'s polymorphic object creation.
+namespace bliss {
+    scan create_scan_from_file_shim(std::string_view file_path, int n_fine);
+    observation_target create_obs_target_from_files_shim(std::vector<std::string> files, int n_fine);
+    cadence create_cadence_from_files_shim(std::vector<std::vector<std::string>> files, int n_fine);
+}
+
+/**
+ * @brief Binds the Core C++ classes to the Python module.
+ * @param m The nanobind module instance.
+ */
 void bind_pycore(nb::module_ m) {
 
+    // --- Frequency Drift Plane Bindings ---
     nb::class_<bliss::frequency_drift_plane> pyfrequency_drift_plane(m, "frequency_drift_plane");
     pyfrequency_drift_plane
         .def("set_device", nb::overload_cast<std::string_view>(&bliss::frequency_drift_plane::set_device))
@@ -30,6 +44,7 @@ void bind_pycore(nb::module_ m) {
         .def_prop_ro("integrated_rfi", &bliss::frequency_drift_plane::integrated_rfi)
         .def("drift_rate_info", &bliss::frequency_drift_plane::drift_rate_info);
 
+    // Inner struct: drift_rate
     nb::class_<bliss::frequency_drift_plane::drift_rate>(pyfrequency_drift_plane, "drift_rate")
         .def_ro("desmeared_bins", &bliss::frequency_drift_plane::drift_rate::desmeared_bins)
         .def_ro("drift_rate_Hz_per_sec", &bliss::frequency_drift_plane::drift_rate::drift_rate_Hz_per_sec)
@@ -38,10 +53,15 @@ void bind_pycore(nb::module_ m) {
         .def("__repr__", &bliss::frequency_drift_plane::drift_rate::repr)
         .def("__str__", &bliss::frequency_drift_plane::drift_rate::repr);
 
+    // --- Coarse Channel Bindings ---
     nb::class_<bliss::coarse_channel>(m, "coarse_channel")
+        // Expose data and mask as numpy-compatible arrays
         .def_prop_ro("data", [](bliss::coarse_channel &self){return bland::ndarray(self.data());})
         .def_prop_ro("mask", [](bliss::coarse_channel &self){return bland::ndarray(self.mask());})
+        
         .def_prop_ro("hits", &bliss::coarse_channel::hits)
+        
+        // Metadata properties
         .def_prop_ro("az_start", &bliss::coarse_channel::az_start)
         .def_prop_ro("data_type", &bliss::coarse_channel::data_type)
         .def_prop_ro("fch1", &bliss::coarse_channel::fch1)
@@ -56,17 +76,24 @@ void bind_pycore(nb::module_ m) {
         .def_prop_ro("tsamp", &bliss::coarse_channel::tsamp)
         .def_prop_ro("tstart", &bliss::coarse_channel::tstart)
         .def_prop_ro("za_start", &bliss::coarse_channel::za_start)
+        
         .def_prop_ro("noise_estimate", &bliss::coarse_channel::noise_estimate)
         .def("integrated_drift_plane", &bliss::coarse_channel::integrated_drift_plane)
+        
+        // Device management
         .def("device", &bliss::coarse_channel::device)
         .def("set_device", nb::overload_cast<bland::ndarray::dev&>(&bliss::coarse_channel::set_device))
         .def("set_device", nb::overload_cast<std::string_view>(&bliss::coarse_channel::set_device))
         .def("push_device", (&bliss::coarse_channel::push_device));
 
 
+    // --- Scan Bindings ---
     nb::class_<bliss::scan>(m, "scan")
-        .def(nb::init<std::string_view>(), "file_path"_a)
-        .def(nb::init<std::string_view, int>(), "file_path"_a, "fine_channels_per_coarse"_a=0)
+        // Custom constructor: uses the C++ factory shim to detect file type and create the DataSource
+        .def("__init__", [](bliss::scan *self, std::string_view file_path, int n_fine) {
+             new (self) bliss::scan(bliss::create_scan_from_file_shim(file_path, n_fine));
+        }, "file_path"_a, "fine_channels_per_coarse"_a=0)
+        
         .def("read_coarse_channel", &bliss::scan::read_coarse_channel)
         .def("peak_coarse_channel", &bliss::scan::peak_coarse_channel)
         .def("get_coarse_channel_with_frequency", &bliss::scan::get_coarse_channel_with_frequency, "frequency"_a)
@@ -74,6 +101,8 @@ void bind_pycore(nb::module_ m) {
         .def("get_file_path", &bliss::scan::get_file_path)
         .def("hits", &bliss::scan::hits)
         .def_prop_ro("num_coarse_channels", &bliss::scan::get_number_coarse_channels)
+        
+        // Metadata & Device props
         .def_prop_ro("az_start", &bliss::scan::az_start)
         .def_prop_ro("data_type",&bliss::scan::data_type)
         .def_prop_ro("fch1", &bliss::scan::fch1)
@@ -93,47 +122,48 @@ void bind_pycore(nb::module_ m) {
         .def("set_device", nb::overload_cast<std::string_view, bool>(&bliss::scan::set_device), "device"_a, "verbose"_a=true)
         .def("push_device", (&bliss::scan::push_device));
 
+    // --- Options & Flags Bindings ---
     nb::class_<bliss::integrate_drifts_options>(m, "integrate_drifts_options")
         .def(nb::init<>())
-        // .def(nb::init<bool>(), )
         .def_rw("desmear", &bliss::integrate_drifts_options::desmear)
         .def_rw("low_rate_Hz_per_sec", &bliss::integrate_drifts_options::low_rate_Hz_per_sec)
         .def_rw("high_rate_Hz_per_sec", &bliss::integrate_drifts_options::high_rate_Hz_per_sec)
         .def_rw("resolution", &bliss::integrate_drifts_options::resolution);
-        // .def_rw("low_rate", &bliss::integrate_drifts_options::low_rate)
-        // .def_rw("high_rate", &bliss::integrate_drifts_options::high_rate)
-        // .def_rw("rate_step_size", &bliss::integrate_drifts_options::rate_step_size);
 
     nb::class_<bliss::integrated_flags>(m, "integrated_flags")
         .def(nb::init<int64_t /*drifts*/, int64_t /*channels*/, bland::ndarray::dev /*device*/>())
-        // .def_rw("filter_rolloff", &bliss::integrated_flags::filter_rolloff)
         .def_rw("low_spectral_kurtosis", &bliss::integrated_flags::low_spectral_kurtosis)
         .def_rw("high_spectral_kurtosis", &bliss::integrated_flags::high_spectral_kurtosis)
-        // .def_rw("magnitude", &bliss::integrated_flags::magnitude)
         .def_rw("sigma_clip", &bliss::integrated_flags::sigma_clip);
 
+    // --- Observation Target Bindings ---
     nb::class_<bliss::observation_target>(m, "observation_target")
         .def(nb::init<std::vector<bliss::scan>>(), "scans"_a)
-        .def(nb::init<std::vector<std::string>, int>(), "scan_files"_a, "fine_channels_per_coarse"_a=0)
+        
+        // Custom __init__ via shim
+        .def("__init__", [](bliss::observation_target *self, std::vector<std::string> scan_files, int n_fine) {
+             new (self) bliss::observation_target(bliss::create_obs_target_from_files_shim(scan_files, n_fine));
+        }, "scan_files"_a, "fine_channels_per_coarse"_a=0)
+
         .def("validate_scan_consistency", &bliss::observation_target::validate_scan_consistency)
         .def("get_coarse_channel_with_frequency", &bliss::observation_target::get_coarse_channel_with_frequency, "frequency"_a)
         .def_prop_ro("number_coarse_channels", &bliss::observation_target::get_number_coarse_channels)
         .def("slice_observation_channels", &bliss::observation_target::slice_observation_channels, "start"_a=0, "count"_a=1)
-        .def("device", &bliss::observation_target::device)
-        .def("set_device", nb::overload_cast<bland::ndarray::dev&, bool>(&bliss::observation_target::set_device), "device"_a, "verbose"_a=true)
-        .def("set_device", nb::overload_cast<std::string_view, bool>(&bliss::observation_target::set_device), "device"_a, "verbose"_a=true)
         .def_rw("scans", &bliss::observation_target::_scans)
         .def_rw("target_name", &bliss::observation_target::_target_name);
 
+    // --- Cadence Bindings ---
     nb::class_<bliss::cadence>(m, "cadence")
         .def(nb::init<std::vector<bliss::observation_target>>(), "observations"_a)
-        .def(nb::init<std::vector<std::vector<std::string>>, int>(), "scan_files"_a, "fine_channels_per_coarse"_a=0)
+        
+        // Custom __init__ via shim
+        .def("__init__", [](bliss::cadence *self, std::vector<std::vector<std::string>> scan_files, int n_fine) {
+             new (self) bliss::cadence(bliss::create_cadence_from_files_shim(scan_files, n_fine));
+        }, "scan_files"_a, "fine_channels_per_coarse"_a=0)
+
         .def("validate_scan_consistency", &bliss::cadence::validate_scan_consistency)
         .def("get_coarse_channel_with_frequency", &bliss::cadence::get_coarse_channel_with_frequency, "frequency"_a)
         .def_prop_ro("number_coarse_channels", &bliss::cadence::get_number_coarse_channels)
         .def("slice_cadence_channels", &bliss::cadence::slice_cadence_channels, "start"_a=0, "count"_a=1)
-        .def_rw("observations", &bliss::cadence::_observations)
-        .def("device", &bliss::cadence::device)
-        .def("set_device", nb::overload_cast<bland::ndarray::dev&, bool>(&bliss::cadence::set_device), "device"_a, "verbose"_a=true)
-        .def("set_device", nb::overload_cast<std::string_view, bool>(&bliss::cadence::set_device), "device"_a, "verbose"_a=true);
+        .def_rw("observations", &bliss::cadence::_observations);
 }

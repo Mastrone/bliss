@@ -3,9 +3,10 @@
 
 using namespace bliss;
 
-
+// Constructor: Initializes the plane and RFI flags without detailed drift metadata.
 bliss::frequency_drift_plane::frequency_drift_plane(bland::ndarray drift_plane, integrated_flags drift_rfi) : _integrated_drifts(drift_plane), _dedrifted_rfi(drift_rfi) {}
 
+// Constructor: Initializes the plane with full context (integration steps and drift rate info).
 bliss::frequency_drift_plane::frequency_drift_plane(bland::ndarray drift_plane, integrated_flags drift_rfi, int64_t integration_steps, std::vector<bliss::frequency_drift_plane::drift_rate> dri) : 
     _integrated_drifts(drift_plane), _dedrifted_rfi(drift_rfi), _integration_steps(integration_steps), _drift_rate_info(dri) {
 }
@@ -19,11 +20,13 @@ std::vector<bliss::frequency_drift_plane::drift_rate> bliss::frequency_drift_pla
 }
 
 bland::ndarray bliss::frequency_drift_plane::integrated_drift_plane() {
+    // Ensure the drift plane data is moved to the correct device before access.
     _integrated_drifts = _integrated_drifts.to(_device);
     return _integrated_drifts;
 }
 
 integrated_flags bliss::frequency_drift_plane::integrated_rfi() {
+    // Ensure the RFI flags are moved to the correct device before access.
     _dedrifted_rfi.set_device(_device);
     _dedrifted_rfi.push_device();
     return _dedrifted_rfi;
@@ -39,9 +42,8 @@ void bliss::frequency_drift_plane::set_device(std::string_view dev_str) {
 }
 
 void bliss::frequency_drift_plane::push_device() {
+    // Explicitly push both the RFI flags and the drift data to the target device.
     _dedrifted_rfi.set_device(_device);
     _dedrifted_rfi.push_device();
     _integrated_drifts = _integrated_drifts.to(_device);
 }
-
-

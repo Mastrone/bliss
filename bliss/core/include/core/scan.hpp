@@ -1,6 +1,8 @@
 #pragma once
 
 #include "coarse_channel.hpp"
+#include "scan_datasource.hpp"
+#include "scan_metadata.hpp"
 
 #include <bland/bland.hpp>
 
@@ -8,91 +10,107 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <memory>
 
 namespace bliss {
 
-struct h5_filterbank_file;
-
+/**
+ * @brief Represents a full SETI observation or a loaded scan.
+ *
+ * The `scan` class is the high-level coordinator of the BLISS pipeline.
+ * It manages the connection to the data source (file or stream), handles metadata,
+ * and orchestrates the creation and processing of `coarse_channel` objects.
+ *
+ * @details
+ * - **Abstraction:** It hides the details of file I/O behind the `IScanDataSource` interface.
+ * - **Slicing:** It supports virtual slicing of the bandwidth via `slice_scan_channels`.
+ * - **Pipeline:** It allows defining a sequence of transforms (filters) applied to every channel.
+ * - **Device Management:** Acts as the primary interface for setting the compute device (CPU/CUDA)
+ * for the entire observation, propagating this setting to all child channels.
+ */
 class scan {
   public:
+    /// @brief Default constructor. Creates an empty scan.
     scan() = default;
 
+    /// @brief Constructs a scan from an existing map of coarse channels.
+    /// @param coarse_channels A map where key is the channel index and value is the channel object.
     scan(std::map<int, std::shared_ptr<coarse_channel>> coarse_channels);
 
-    /**
-     * new scan backed by the given `h5_filterbank_file`
-     */
-    scan(h5_filterbank_file fb_file, int num_fine_channels_per_coarse=0);
+    /// @brief Primary Constructor.
+    /// @details Initializes the scan by connecting to a data source.
+    /// @param data_source Shared pointer to a data source (e.g., H5 file reader).
+    /// @param num_fine_channels_per_coarse Number of fine channels per coarse channel. 
+    ///        If 0, it attempts to infer the channelization scheme automatically.
+    scan(std::shared_ptr<IScanDataSource> data_source, int num_fine_channels_per_coarse=0);
 
-    /**
-     * new scan backed by the filterbank file at `file_path`
-     */
-    scan(std::string_view file_path, int num_fine_channels_per_coarse=0);
-
-    /**
-     * read the coarse channel at given index and return shared ownership of it.
-     *
-     * The `coarse_channel` has similar metadata to a `scan` object
-     * but is specific to the `coarse_channel`, for example `fch1` and `nchan`
-     * represent the frequency of the first fine channel in this coarse channel
-     * and the number of fine channels in this channel.
-     *
-     * It might exist in an internal cache in which case it's simply returned without
-     * disk access. The cache may remove a `coarse_channel` without notice so
-     * ownership of `coarse_channels` is shared.
-     */
+    /// @brief Retrieves (and loads if necessary) a specific coarse channel.
+    /// @details This method triggers the reading of data from disk for the requested channel.
+    /// The loaded channel is cached in memory.
+    /// @param coarse_channel_index The 0-based index of the coarse channel to read.
+    /// @return A shared pointer to the `coarse_channel` object.
+    /// @throws std::out_of_range if index is invalid.
     std::shared_ptr<coarse_channel> read_coarse_channel(int coarse_channel_index = 0);
 
-    /**
-     * Similar to `get_coarse_channel` but returns nullptr if the coarse_channel isn't
-     * already in memory (has not been read from disk / used yet). This is useful for
-     * gathering results / operating on all coarse channels that are already loaded
-    */
+    /// @brief Peeks at a coarse channel if it's already in memory.
+    /// @return Shared pointer to the channel if loaded, `nullptr` otherwise.
     std::shared_ptr<coarse_channel> peak_coarse_channel(int coarse_channel_index = 0);
 
-    /**
-     * A function that will be called on each coarse_channel when read with read_coarse_channel
-     * or poke_coarse_channel
-     */
+    /// @brief Adds a processing step to the channel pipeline.
+    /// @details The transform function will be applied to every coarse channel *upon loading*.
+    /// This allows building a lazy processing chain (e.g., normalize -> excise_dc -> flag).
+    /// @param transform A function taking a coarse_channel and returning a modified one.
+    /// @param description Optional string describing the transform (for logging).
     void add_coarse_channel_transform(std::function<coarse_channel(coarse_channel)> transform, std::string description="");
 
-    /**
-     * return the coarse channel index that the given frequency is in
-     * 
-     * useful for reinvestigating hits by looking up frequency
-     * 
-     * In the future this may change name or return the actual coarse channel
-    */
+    /// @brief Calculates which coarse channel contains a specific frequency.
+    /// @param frequency The frequency in MHz.
+    /// @return The index of the coarse channel.
     int get_coarse_channel_with_frequency(double frequency) const;
 
-    /**
-     * get the number of coarse channels in this filterbank
-     *
-     * This value is derived from known channelizations of BL backends and
-     * the actual number of fine channels in this filterbank
-     */
+    /// @brief Returns the total number of coarse channels in this scan.
     int get_number_coarse_channels() const;
 
+    /// @brief Returns the path of the underlying data file (if applicable).
     std::string get_file_path() const;
 
-    /**
-     * gather hits in all coarse channels of this scan and return as a single list
-     */
+    /// @brief Collects all hits from all loaded channels.
+    /// @details Iterates over all cached channels, triggering processing if necessary, and aggregates detected hits.
+    /// @return A list of all detected hits.
     std::list<hit> hits();
 
+    /// @brief Computes the range of drift rates found across all channels.
+    /// @return A pair {min_drift, max_drift} in Hz/s.
     std::pair<float, float> get_drift_range();
 
+    /// @brief Gets the current compute device.
     bland::ndarray::dev device();
+
+    /// @brief Sets the compute device for the scan and all its channels.
+    /// @details Propagates the device setting to all currently loaded coarse channels.
+    /// Future loaded channels will also use this device.
+    /// @param device The target device (e.g., `bland::ndarray::dev::cuda`).
+    /// @param verbose If true, prints device info.
     void set_device(bland::ndarray::dev &device, bool verbose=true);
+
+    /// @brief Sets the compute device by name string (e.g., "cuda:0", "cpu").
     void set_device(std::string_view device, bool verbose=true);
+
+    /// @brief Forces data migration to the configured device for all loaded channels.
+    /// @details Useful to ensure data is on GPU before starting a heavy compute kernel.
     void push_device();
 
-    /**
-     * create a new scan consisting of the selected coarse channel
-     */
+    /// @brief Creates a new `scan` object representing a subset of channels.
+    /// @details This is a "virtual slice"; it shares the underlying data source but restricts the view.
+    /// Useful for distributed processing (e.g., assigning different channel ranges to different nodes).
+    /// @param start_channel The starting coarse channel index.
+    /// @param count The number of channels to include (-1 for "until end").
+    /// @return A new `scan` instance.
     scan slice_scan_channels(int64_t start_channel = 0, int64_t count = 1);
 
-    // Setters and getters for values read from disk
+    // --- GETTERS & SETTERS (Proxies to internal `scan_metadata`) ---
+    // These methods provide direct access to the metadata fields stored in the underlying `scan_metadata` struct.
+    
     double      fch1() const;
     void        set_fch1(double);
     double      foff() const;
@@ -117,66 +135,41 @@ class scan {
     void        set_tsamp(double);
     double      tstart() const;
     void        set_tstart(double);
+    int64_t     data_type() const;
+    void        set_data_type(int64_t);
+    double      az_start() const;
+    void        set_az_start(double);
+    double      za_start() const;
+    void        set_za_start(double);
+    int64_t     ntsteps() const;
+    double      tduration_secs() const;
 
-    int64_t data_type() const;
-    void    set_data_type(int64_t);
-    double  az_start() const;
-    void    set_az_start(double);
-    double  za_start() const;
-    void    set_za_start(double);
-
-    int64_t ntsteps() const;
-
-    double tduration_secs() const;
-
+    /// @brief Defines a processing stage in the pipeline.
     struct transform_stage {
       std::string description;
       std::function<coarse_channel(coarse_channel)> transform;
     };
 
   protected:
-    // TODO (design note): This shared_ptr is shared between all slices which means set_device
-    // on higher layers or slices of this scan will effect every slice (or even the global) which
-    // may inadverdently increase vmem. It's a bit more work and not worth it right now because
-    // it's not an active issue, but we can also keep track of "active_coarse_channels" which are
-    // only those within the current slice / copy and only have set_device, etc effect those channels
-    // std::string _original_file_path={};
+    // Cache of loaded coarse channels.
     std::map<int, std::shared_ptr<coarse_channel>> _coarse_channels;
-    std::shared_ptr<h5_filterbank_file>            _h5_file_handle = nullptr;
+    
+    // Abstract source for reading data.
+    std::shared_ptr<IScanDataSource> _data_source = nullptr;
+    
+    // Ordered list of transforms to apply to new channels.
     std::vector<transform_stage> _coarse_channel_pipeline;
 
-    // Read from h5 file
-    double      _fch1;
-    double      _foff;
-    std::optional<int64_t>     _machine_id;
-    int64_t     _nbits;
-    int64_t     _nchans;
-    int64_t     _nifs;
-    std::string _source_name;
-    std::optional<double>      _src_dej;
-    std::optional<double>      _src_raj;
-    std::optional<int64_t>     _telescope_id;
-    double      _tsamp;
-    double      _tstart;
+    // Unified metadata storage.
+    scan_metadata _meta;
 
-    int64_t _data_type;
-    std::optional<double>  _az_start;
-    std::optional<double>  _za_start;
-
-
-    // Derived OR inferred
+    // Derived values
     int _fine_channels_per_coarse;
-    // Derived values at read-time
     int64_t _num_coarse_channels;
     int64_t _coarse_channel_offset = 0;
-
-    // slow time is number of spectra
-    int64_t _ntsteps;
     double  _tduration_secs;
 
     bland::ndarray::dev _device = bland::ndarray::dev::cpu;
-
-  private:
 };
 
 } // namespace bliss

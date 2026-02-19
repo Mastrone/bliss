@@ -1,4 +1,3 @@
-
 #include <core/scan.hpp>
 #include <core/cadence.hpp>
 #include <estimators/noise_estimate.hpp>
@@ -14,6 +13,7 @@
 #include <flaggers/sigmaclip.hpp>
 #include <flaggers/spectral_kurtosis.hpp>
 #include <file_types/hits_file.hpp>
+#include <file_types/scan_factory.hpp>
 
 #include "fmt/core.h"
 #include <fmt/ranges.h>
@@ -22,7 +22,7 @@
 #include <vector>
 
 #include <chrono>
-#include <iostream> // for printing help
+#include <iostream> 
 #if __has_include(<filesystem>)
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -33,30 +33,69 @@ namespace fs = std::experimental::filesystem;
 #error "Filesystem library not available"
 #endif
 
-#include "clipp.h"
+#include "clipp.h" // Command Line Argument Parser library
 
+/**
+ * @brief Main entry point for the BLISS Hit Search CLI application.
+ * * @details This application implements a complete SETI search pipeline:
+ * 1.  **Ingestion**: Reads Filterbank/HDF5 files using the `ScanFactory`.
+ * 2.  **Preprocessing**: Normalizes data, excises DC spike, and equalizes the bandpass.
+ * 3.  **Flagging**: Identifies RFI using Spectral Kurtosis, Sigma Clipping, and Rolloff filters.
+ * 4.  **Noise Estimation**: Estimates the noise floor for SNR calculations.
+ * 5.  **Drift Search**:
+ * - Integrates energy along potential drift paths (De-Doppler).
+ * - Searches for significant signals (Hits) above the SNR threshold.
+ * 6.  **Filtering**: Removes likely RFI hits (e.g., zero drift).
+ * 7.  **Output**: Writes results to disk in Cap'n Proto or .dat format.
+ * * @param argc Number of command-line arguments.
+ * @param argv Array of command-line argument strings.
+ * @return 0 on success, non-zero on error.
+ */
 int main(int argc, char *argv[]) {
 
+    // --- Configuration Variables (with defaults) ---
     std::vector<std::string> pipeline_files;
     int coarse_channel=0;
     int number_coarse_channels=1;
     std::string channel_taps_path;
     bool validate_pfb_response = false;
     bool excise_dc = false;
+    
+    // Dedoppler Options
     bliss::integrate_drifts_options dedrift_options{
-            .desmear = true, .low_rate_Hz_per_sec = -5, .high_rate_Hz_per_sec = 5, .resolution = 1};
+            .desmear = true, 
+            .low_rate_Hz_per_sec = -5, 
+            .high_rate_Hz_per_sec = 5, 
+            .resolution = 1
+    };
     int low_rate = std::numeric_limits<int>::min();
     int high_rate = std::numeric_limits<int>::max();
 
     std::string device="cuda:0";
     int nchan_per_coarse=0;
-    bliss::hit_search_options hit_search_options{.method = bliss::hit_search_methods::CONNECTED_COMPONENTS, .snr_threshold = 10.0f, .neighbor_l1_dist=7};
-    bliss::filter_options hit_filter_options{.filter_zero_drift = true,
-                .filter_sigmaclip = true, .minimum_percent_sigmaclip = 0.1,
-                .filter_high_sk = false, .minimum_percent_high_sk = 0.1,
-                .filter_low_sk = false, .maximum_percent_low_sk = 0.1};
+    
+    // Hit Search Options
+    bliss::hit_search_options hit_search_options{
+        .method = bliss::hit_search_methods::CONNECTED_COMPONENTS, 
+        .snr_threshold = 10.0f, 
+        .neighbor_l1_dist=7
+    };
+    
+    // Filtering Options
+    bliss::filter_options hit_filter_options{
+        .filter_zero_drift = true,
+        .filter_sigmaclip = true, 
+        .minimum_percent_sigmaclip = 0.1,
+        .filter_high_sk = false, 
+        .minimum_percent_high_sk = 0.1,
+        .filter_low_sk = false, 
+        .maximum_percent_low_sk = 0.1
+    };
+    
     std::string output_path = "";
     std::string output_format = "";
+    
+    // RFI Flagging Thresholds
     struct {
         float filter_rolloff = 0.25;
         float sk_low = 0.25;
@@ -66,7 +105,10 @@ int main(int argc, char *argv[]) {
         float sigmaclip_low = 3;
         float sigmaclip_high = 4;
     } flag_options;
+    
     bool help = false;
+
+    // --- CLI Argument Definition (using clipp) ---
     auto cli = (
         (
             clipp::values("files").set(pipeline_files) % "input hdf5 filterbank files",
@@ -90,62 +132,24 @@ int main(int argc, char *argv[]) {
              clipp::option("--nodesmear").set(dedrift_options.desmear, false)) % "Desmear the drift plane to compensate for drift rate crossing channels",
             (clipp::option("-md", "--min-drift") & clipp::value("min-rate").set(dedrift_options.low_rate_Hz_per_sec)) % fmt::format("Minimum drift rate (default: {})", dedrift_options.low_rate_Hz_per_sec),
             (clipp::option("-MD", "--max-drift") & clipp::value("max-rate").set(dedrift_options.high_rate_Hz_per_sec)) % fmt::format("Maximum drift rate (default: {})", dedrift_options.high_rate_Hz_per_sec),
-            // Reserve for potential Hz/sec step in the future
-            // (clipp::option("-dr", "--drift-resolution") & clipp::value("rate-step").set(dedrift_options.resolution)) % "Multiple of unit drift resolution to step in search (default: 1)",
+            
             (clipp::option("-rs", "--rate-step") & clipp::value("rate-step").set(dedrift_options.resolution)) % fmt::format("Multiple of unit drift resolution to step in search (default: {})", dedrift_options.resolution),
             
+            // Legacy options for drift in bins (Deprecated)
             (clipp::option("-m", "--min-rate") & clipp::value("min-rate").set(low_rate)) % "(DEPRECATED: use -md) Minimum drift rate (fourier bins)",
             (clipp::option("-M", "--max-rate") & clipp::value("max-rate").set(high_rate)) % "(DEPRECATED: use -MD) Maximum drift rate (fourier bins)",
 
-            // Flagging
-            // This is left in as a reference for refactoring and cleaning up cli in the future. I would like to have these subgroups, etc but
-            // don't want to break things that people are already used to. I'll make a big announcement about the breaking change when I do
-            // (clipp::option("--flag").doc("Flagging options") & (
-            //     // Filter rolloff
-            //     (clipp::option("--filter-rolloff").doc("Enable filter rolloff flagging") & 
-            //         clipp::opt_value("fraction").set(flag_options.filter_rolloff)) % fmt::format("Fraction of band edges to flag (default: {})", flag_options.filter_rolloff),
-                
-            //     // Sigma clipping
-            //     (clipp::option("--sigmaclip").doc(fmt::format("Set the iterations for sigma clipping (default: {})", flag_options.sigmaclip_iters)) & (
-            //         clipp::opt_value("iters").set(flag_options.sigmaclip_iters),
-            //         (clipp::option("--low").doc("Set the lower threshold for sigma clipping") & clipp::value("threshold").set(flag_options.sigmaclip_low)),
-            //         (clipp::option("--high").doc("Set the upper threshold for sigma clipping") & clipp::value("threshold").set(flag_options.sigmaclip_high))
-            //     )) % fmt::format("Sigma clipping with iterations={}, low={}, high={}", 
-            //         flag_options.sigmaclip_iters, flag_options.sigmaclip_low, flag_options.sigmaclip_high),
-                
-            //     // Spectral kurtosis
-            //     (clipp::option("--sk").doc("Enable spectral kurtosis flagging") & (
-            //         (clipp::option("--low").doc("Set the lower threshold for spectral kurtosis") & clipp::value("threshold").set(flag_options.sk_low)),
-            //         (clipp::option("--high").doc("Set the upper threshold for spectral kurtosis") & clipp::value("threshold").set(flag_options.sk_high)),
-            //         (clipp::option("-d", "--d").doc("Set the shape parameter for spectral kurtosis") & clipp::value("shape").set(flag_options.sk_d))
-            //     )) % fmt::format("Spectral kurtosis with low={}, high={}, d={}", 
-            //         flag_options.sk_low, flag_options.sk_high, flag_options.sk_d)
-            // )),
-
-            // (clipp::option("--flag").doc("Flagging options") & (
-            //     // Filter rolloff
-            //     (clipp::option("--filter-rolloff").doc("Enable filter rolloff flagging") & 
-            //         clipp::opt_value("fraction").set(flag_options.filter_rolloff)) % fmt::format("Fraction of band edges to flag (default: {})", flag_options.filter_rolloff),
-                
-            //     // Sigma clipping
-            //     (clipp::option("--sigmaclip").doc(fmt::format("Set the iterations for sigma clipping (default: {})", flag_options.sigmaclip_iters)) & (
-            //         clipp::opt_value("iters").set(flag_options.sigmaclip_iters),
-            //         (clipp::option("--low").doc("Set the lower threshold for sigma clipping") & clipp::value("threshold").set(flag_options.sigmaclip_low)),
-            //         (clipp::option("--high").doc("Set the upper threshold for sigma clipping") & clipp::value("threshold").set(flag_options.sigmaclip_high))
-            //     )) % fmt::format("Sigma clipping with iterations={}, low={}, high={}", 
-            //         flag_options.sigmaclip_iters, flag_options.sigmaclip_low, flag_options.sigmaclip_high),
-                
             (clipp::option("--sk-low") & clipp::value("spectral kurtosis lower").set(flag_options.sk_low)) % "Flagging lower threshold for spectral kurtosis",
             (clipp::option("--sk-high") & clipp::value("spectral kurtsosis high").set(flag_options.sk_high)) % "Flagging high threshold for spectral kurtosis",
             (clipp::option("--sk-d") & clipp::value("spectral kurtosis d").set(flag_options.sk_d)) % "Flagging shape parameter for spectral kurtosis",
 
-            // Hit search
+            // Hit search config
             (clipp::option("--local-maxima") .set(hit_search_options.method, bliss::hit_search_methods::LOCAL_MAXIMA) |
              clipp::option("--connected-components").set(hit_search_options.method, bliss::hit_search_methods::CONNECTED_COMPONENTS)) % "select the hit search method",
             (clipp::option("-s", "--snr") & clipp::value("snr_threshold").set(hit_search_options.snr_threshold)) % fmt::format("SNR threshold (default: {})", hit_search_options.snr_threshold),
             (clipp::option("--distance") & clipp::value("l1_distance").set(hit_search_options.neighbor_l1_dist)) % fmt::format("L1 distance to consider hits connected (default: {})", hit_search_options.neighbor_l1_dist),
 
-            // Hit filtering
+            // Hit filtering config
             (clipp::option("--filter-zero-drift") .set(hit_filter_options.filter_zero_drift, true) |
              clipp::option("--nofilter-zero-drift").set(hit_filter_options.filter_zero_drift, false)) % fmt::format("Filter out hits with zero drift rate (default: {})", hit_filter_options.filter_zero_drift),
 
@@ -174,99 +178,109 @@ int main(int argc, char *argv[]) {
         return 0;
     }    
 
-    auto pipeline_object = bliss::observation_target(pipeline_files, nchan_per_coarse);
+    // --- 1. INITIALIZATION & LOADING ---
+    
+    // Load scans using the Factory
+    std::vector<bliss::scan> scans;
+    scans.reserve(pipeline_files.size());
+    for (const auto &file_path : pipeline_files) {
+        auto new_scan = bliss::ScanFactory::create_from_file(file_path, nchan_per_coarse);
+        
+        // Set compute device (CPU/CUDA) immediately upon creation
+        new_scan.set_device(device);
+        
+        scans.push_back(new_scan);
+    }
 
+    // Wrap scans in an observation target container
+    auto pipeline_object = bliss::observation_target(scans);
+
+    // Apply slicing (processing only a subset of channels)
     pipeline_object = pipeline_object.slice_observation_channels(coarse_channel, number_coarse_channels);
 
-
+    // Derive drift parameters from file metadata if needed
     auto foff = std::fabs(1e6 * pipeline_object._scans[0].foff());
     auto tsamp = pipeline_object._scans[0].tsamp();
     auto ntsteps = pipeline_object._scans[0].ntsteps();
     auto drift_resolution = foff/(tsamp*(ntsteps-1));
+    
+    // Handle deprecated legacy arguments
     if (low_rate != std::numeric_limits<int>::min()) {
         auto low_rate_Hz_per_sec = low_rate * drift_resolution;
         dedrift_options.low_rate_Hz_per_sec = low_rate_Hz_per_sec;
-        fmt::print("WARN: deprecated use of -m (value given is {}) to specify min drift rate in terms of unit drift resolution bins. Use -md {} to specify min drift in units of Hz/sec instead.\n", low_rate, low_rate_Hz_per_sec);
+        fmt::print("WARN: deprecated use of -m ...\n");
     }
     if (high_rate != std::numeric_limits<int>::max()) {
         auto high_rate_Hz_per_sec = high_rate * drift_resolution;        
         dedrift_options.high_rate_Hz_per_sec = high_rate_Hz_per_sec;
-        fmt::print("WARN: deprecated use of -M (value given is {}) to specify Max drift rate in terms of unit drift resolution bins. Use -MD {} to specify Max Drift in units of Hz/sec instead.\n", high_rate, high_rate_Hz_per_sec);
+        fmt::print("WARN: deprecated use of -M ...\n");
     }
 
+    // --- 2. PREPROCESSING & FLAGGING ---
 
-    pipeline_object.set_device(device);
-
+    // Normalize signal power
     pipeline_object = bliss::normalize(pipeline_object);
+    
+    // Remove DC spike
     if (excise_dc) {
         pipeline_object = bliss::excise_dc(pipeline_object);
     }
+    
+    // Bandpass Equalization / Rolloff Flagging
     if (!channel_taps_path.empty()) {
+        // Use provided filter response to flatten bandpass
         pipeline_object = bliss::equalize_passband_filter(pipeline_object, channel_taps_path, bland::ndarray::datatype::float32, validate_pfb_response);
     } else {
+        // Fallback: just flag the rolloff edges
         pipeline_object = bliss::flag_filter_rolloff(pipeline_object, flag_options.filter_rolloff);
     }
+    
+    // Advanced RFI Flagging
     pipeline_object = bliss::flag_spectral_kurtosis(pipeline_object, flag_options.sk_low, flag_options.sk_high, flag_options.sk_d);
     pipeline_object = bliss::flag_sigmaclip(pipeline_object, flag_options.sigmaclip_iters, flag_options.sigmaclip_low, flag_options.sigmaclip_high);
 
+    // --- 3. NOISE ESTIMATION ---
     pipeline_object = bliss::estimate_noise_power(
             pipeline_object,
-            bliss::noise_power_estimate_options{.estimator_method = bliss::noise_power_estimator::STDDEV,
-                                                .masked_estimate  = true}); // estimate noise power of unflagged data
+            bliss::noise_power_estimate_options{
+                .estimator_method = bliss::noise_power_estimator::STDDEV,
+                .masked_estimate  = true // Exclude flagged RFI from noise calc
+            }); 
 
+    // --- 4. DRIFT SEARCH (DEDOPPLER) ---
+    // 
     pipeline_object = bliss::integrate_drifts(pipeline_object, dedrift_options);
 
+    // --- 5. HIT DETECTION ---
     auto pipeline_object_with_hits = bliss::hit_search(pipeline_object, hit_search_options);
 
+    // --- 6. HIT FILTERING ---
     pipeline_object_with_hits = bliss::filter_hits(pipeline_object_with_hits, hit_filter_options);
 
-    // try {
-        // TODO: add cli args for where to send hits (stdout, file.dat, capn proto serialize,...)
-        for (int scan_index=0; scan_index < pipeline_object_with_hits._scans.size(); ++scan_index) {
-            auto &sc = pipeline_object_with_hits._scans[scan_index];
+    // --- 7. OUTPUT ---
 
-            if (output_path.empty()) {
-                auto path = fs::path(pipeline_files[scan_index]);
+    for (int scan_index=0; scan_index < pipeline_object_with_hits._scans.size(); ++scan_index) {
+        auto &sc = pipeline_object_with_hits._scans[scan_index];
 
-                output_path = path.filename().replace_extension("capnp");
-                output_format = "capnp";
+        // Auto-generate filename if not provided
+        if (output_path.empty()) {
+            auto path = fs::path(pipeline_files[scan_index]);
+            output_path = path.filename().replace_extension("capnp");
+            output_format = "capnp";
+        }
+
+        if (output_path == "-" || output_path == "stdout") {
+            // Print to console
+            auto hits = sc.hits();
+            fmt::print("scan has {} hits\n", hits.size());
+            for (auto &h : hits) {
+                fmt::print("{}\n", h.repr());
             }
-
-            if (output_path == "-" || output_path == "stdout") {
-                auto hits = sc.hits();
-                fmt::print("scan has {} hits\n", hits.size());
-                for (auto &h : hits) {
-                    fmt::print("{}\n", h.repr());
-                }
-            } else {
-                // Fix for "double-loop" bug: Pre-calculate the exact physical max drift rate based on scan geometry
-                // (mirroring logic in integrate_drifts.cpp). Passing this explicit value prevents the writer 
-                // from triggering a redundant and expensive re-computation of the pipeline.
-                // Includes 6-decimal rounding to maintain binary compatibility with legacy file headers.
-                
-                double tsamp = sc.tsamp();
-                int time_steps = sc.ntsteps();
-                double foff_Hz = std::abs(sc.foff()) * 1e6; 
-
-                double unit_drift_resolution = foff_Hz / ((time_steps - 1) * tsamp);
-
-                double rounded_low = std::round(dedrift_options.low_rate_Hz_per_sec / unit_drift_resolution) * unit_drift_resolution;
-                double rounded_high = std::round(dedrift_options.high_rate_Hz_per_sec / unit_drift_resolution) * unit_drift_resolution;
-
-                double search_step = unit_drift_resolution * dedrift_options.resolution;
-                
-                long number_drifts = std::lround(std::abs(rounded_high - rounded_low) / std::abs(search_step));
-                double precise_max_drift = rounded_low + (number_drifts - 1) * std::abs(search_step);
-                
-                double final_max_drift = std::round(precise_max_drift * 1e7) / 1e7;
-
-                bliss::write_scan_hits_to_file(sc, output_path, output_format, final_max_drift);
-                  }
-            }
-    // } catch (std::exception &e) {
-    //     fmt::print("ERROR: got a fatal exception ({}) while running pipeline. This is likely due to running out of "
-    //                "memory. Ending processing.\n",
-    //                e.what());
-    // }
-
+        } else {
+            // Write to file (using HitFileFactory logic implicitly via write_scan_hits_to_file)
+            bliss::write_scan_hits_to_file(sc, output_path, output_format, dedrift_options.high_rate_Hz_per_sec);
+        }
+    }
+    
+    return 0;
 }

@@ -15,12 +15,16 @@ bland::ndarray bliss::flag_spectral_kurtosis(const bland::ndarray &data,
                                              float                 d,
                                              float                 lower_threshold,
                                              float                 upper_threshold) {
+    // 1. Compute SK statistic using the estimator
     auto sk = estimate_spectral_kurtosis(data, N, M, d);
 
-    // 2. Threshold & set on channels
+    // 2. Threshold & set flags based on bounds
+    // Low SK often indicates arithmetic issues or specific modulation types
+    // High SK indicates impulsive RFI
     auto rfi = (sk < lower_threshold) * static_cast<uint8_t>(flag_values::low_spectral_kurtosis) +
                (sk > upper_threshold) * static_cast<uint8_t>(flag_values::high_spectral_kurtosis);
-    rfi = rfi.unsqueeze(0); // Get the time channel back so we'll broadcast properly
+               
+    rfi = rfi.unsqueeze(0); // Restore time dimension for broadcasting compatibility
     return rfi;
 }
 
@@ -28,15 +32,15 @@ coarse_channel bliss::flag_spectral_kurtosis(coarse_channel cc_data, float lower
     bland::ndarray spectrum_grid = cc_data.data();
     bland::ndarray rfi_flags     = cc_data.mask();
 
-    // 1. Compute params for SK estimate
-    auto M  = spectrum_grid.size(0);
-    auto Fs = std::abs(1.0 / (1e6 * cc_data.foff()));
-    auto N  = std::round(cc_data.tsamp() / Fs);
+    // 1. Compute params for SK estimate from metadata
+    auto M  = spectrum_grid.size(0); // Number of time steps in the block
+    auto Fs = std::abs(1.0 / (1e6 * cc_data.foff())); // Sampling frequency
+    auto N  = std::round(cc_data.tsamp() / Fs); // Number of raw samples averaged per bin
 
     // 2. Generate SK flag
     auto rfi = flag_spectral_kurtosis(spectrum_grid, N, M, d, lower_threshold, upper_threshold);
 
-    auto accumulated_rfi = rfi_flags + rfi; // a | operator would be more appropriate
+    auto accumulated_rfi = rfi_flags + rfi; 
 
     // 3. Store back accumulated rfi
     cc_data.set_mask(accumulated_rfi);

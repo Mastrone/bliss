@@ -1,6 +1,6 @@
-
 add_library(file_types
     h5_filterbank_file.cpp
+    scan_factory.cpp
 )
 
 target_include_directories(file_types
@@ -11,6 +11,7 @@ target_include_directories(file_types
 target_link_libraries(file_types
     PUBLIC
     bland
+    bliss_core
     HDF5::HDF5
     PRIVATE
     fmt::fmt-header-only

@@ -1,4 +1,3 @@
-
 #include "file_types/events_file.hpp"
 
 #include "hit.capnp.h"
@@ -24,15 +23,16 @@ void bliss::write_events_to_file(std::vector<event> events, std::string_view fil
 
     auto out_file = detail::raii_file_for_write(file_path);
     for (size_t event_index = 0; event_index < events.size(); ++event_index) {
-        auto                        this_event = events[event_index];
+        auto                                this_event = events[event_index];
         capnp::MallocMessageBuilder message;
-        auto                        event_builder = message.initRoot<Event>();
+        auto                                event_builder = message.initRoot<Event>();
 
+        // Initialize the list of hits within the event message
         auto   hits_builder = event_builder.initHits(this_event.hits.size());
         size_t hit_index    = 0;
         for (auto this_hit : this_event.hits) {
             auto signal_builder = hits_builder[hit_index].initSignal();
-            hits_builder[hit_index].initFilterbank();
+            hits_builder[hit_index].initFilterbank(); // Initialize filterbank struct (even if empty)
             detail::bliss_hit_to_capnp_signal_message(signal_builder, this_hit);
             hit_index += 1;
         }
@@ -54,8 +54,9 @@ std::vector<event> bliss::read_events_from_file(std::string_view file_path) {
 
             auto event_reader      = message.getRoot<Event>();
             auto deserialized_hits = event_reader.getHits();
-            // deserialized_event
+            
             event new_event;
+            // Iterate over serialized hits and reconstruct them
             for (auto deser_hit = deserialized_hits.begin(); deser_hit != deserialized_hits.end(); ++deser_hit) {
                 auto signal_reader = deser_hit->getSignal();
                 hit  new_hit       = detail::capnp_signal_message_to_bliss_hit(signal_reader);
@@ -63,7 +64,7 @@ std::vector<event> bliss::read_events_from_file(std::string_view file_path) {
             }
             events.push_back(new_event);
         } catch (kj::Exception &e) {
-            // We've reached the end of the file.
+            // End of file reached (or read error).
             break;
         }
     }

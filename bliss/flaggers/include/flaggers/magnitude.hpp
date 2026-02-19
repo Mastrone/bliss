@@ -7,30 +7,33 @@ namespace bliss {
 
 
 /**
- * return a mask with flags set for grid elements which have magnitude above the defined threshold
- * 
-*/
+ * @brief Generates a mask for elements exceeding a fixed magnitude threshold.
+ * @param data The input data array (spectrogram).
+ * @param threshold The value above which samples are flagged.
+ * @return A uint8 mask with `flag_values::magnitude` set where `data > threshold`.
+ */
 bland::ndarray flag_magnitude(const bland::ndarray &data, float threshold);
 
 /**
- * return a masked copy of fb_data where the coarse_channel.data() is above the given threshold
- * 
-*/
+ * @brief Flags a coarse channel based on a hard magnitude threshold.
+ * @return A modified coarse channel with updated RFI mask.
+ */
 coarse_channel flag_magnitude(coarse_channel fb_data, float threshold);
+
+/**
+ * @brief Flags a coarse channel using an automatically calculated threshold.
+ * @details Computes `mean + 10 * stddev` of the channel data and uses that as the threshold.
+ */
 coarse_channel flag_magnitude(coarse_channel fb_data);
 
 /**
- * return a masked copy of fb_data where the scan.data() is above the given threshold
- * 
-*/
+ * @brief Applies magnitude flagging to an entire scan (hard threshold).
+ */
 scan flag_magnitude(scan fb_data, float threshold);
 
 /**
- * return a masked copy of fb_data where the scan.data() is above a threshold.
- * When no threshold is given, this will internally compute a mean & stddev, then use a threshold
- * of mean + 10 * stddev
- * 
-*/
+ * @brief Applies magnitude flagging to an entire scan (auto threshold: mean + 10*stddev).
+ */
 scan flag_magnitude(scan fb_data);
 
 observation_target flag_magnitude(observation_target observations, float threshold);

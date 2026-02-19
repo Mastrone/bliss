@@ -13,58 +13,54 @@
 namespace bliss {
 
 /**
- * write hits as independently serialized cap'n proto messages packed in to a binary file at the given path
-*/
+ * @brief Writes a list of hits to a binary file using Cap'n Proto serialization.
+ */
 template<typename Container>
 void write_hits_to_capnp_file(Container hits, std::string_view file_path);
 
 /**
- * read cap'n proto serialized hits from file as written by `write_hits_to_capnp_file`
-*/
+ * @brief Reads a list of hits from a Cap'n Proto binary file.
+ */
 std::list<hit> read_hits_from_capnp_file(std::string_view file_path);
 
 /**
- * write scan metadata and associated hits as cap'n proto messages to binary file at the given path
-*/
+ * @brief Serializes a single coarse channel (metadata + hits) to Cap'n Proto.
+ */
 void write_coarse_channel_hits_to_capnp_file(coarse_channel scan_with_hits, std::string_view file_path);
 
 /**
- * read cap'n proto serialized scan from file as written by `write_coarse_channel_hits_to_capnp_file`
-*/
+ * @brief Deserializes a coarse channel from Cap'n Proto.
+ */
 coarse_channel read_coarse_channel_hits_from_capnp_file(std::string_view file_path);
 
 /**
- * write scan metadata and associated hits as cap'n proto messages to binary file at the given path
-*/
+ * @brief Serializes an entire scan (collection of coarse channels) to Cap'n Proto.
+ */
 void write_scan_hits_to_capnp_file(scan scan_with_hits, std::string_view file_path);
 
 /**
- * read cap'n proto serialized scan from file as written by `write_coarse_channel_hits_to_capnp_file`
-*/
+ * @brief Deserializes an entire scan.
+ */
 scan read_scan_hits_from_capnp_file(std::string_view file_path);
 
 /**
- * write an observation target's scan md and associated hits as cap'n proto messages to binary files matching
- * the file_path
- * the result will be one file per scan of the observation target
-*/
+ * @brief Serializes an entire observation target.
+ */
 void write_observation_target_hits_to_capnp_files(observation_target scan_with_hits, std::string_view file_path);
 
 /**
- * read cap'n proto serialized scan from file as written by `write_coarse_channel_hits_to_capnp_file`
-*/
+ * @brief Deserializes an observation target.
+ */
 observation_target read_observation_target_hits_from_capnp_files(std::string_view file_path);
 
 /**
- * write all detected hits for all scans of each observation target in a cadence as cap'n proto messages to binary files matching
- * the file_path
- * the result will be one file per scan for each observation target with filenames matching the pattern
-*/
+ * @brief Serializes a full cadence.
+ */
 void write_cadence_hits_to_capnp_files(cadence cadence_with_hits, std::string_view file_path);
 
 /**
- * read cap'n proto serialized scan from file as written by `write_coarse_channel_hits_to_capnp_file`
-*/
+ * @brief Deserializes a full cadence.
+ */
 cadence read_cadence_hits_from_capnp_files(std::string_view file_path);
 
 

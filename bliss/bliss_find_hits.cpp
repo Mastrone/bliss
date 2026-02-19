@@ -35,6 +35,41 @@ namespace fs = std::experimental::filesystem;
 
 #include "clipp.h" // Command Line Argument Parser library
 
+
+/**
+ * @brief Calculates the precise maximum drift rate evaluated during the de-Doppler search.
+ * * @details The de-Doppler integration (drift search) evaluates discrete drift rates 
+ * based on the fundamental drift resolution of the observation. This resolution is 
+ * dictated by the frequency channel width, sampling time, and total number of timesteps.
+ * * This function computes the exact maximum drift rate that falls on this physical grid 
+ * by quantizing the requested search bounds. By calculating this purely from metadata, 
+ * it provides accurate reporting parameters (e.g., for output file headers) without 
+ * triggering the computationally expensive lazy evaluation of the full drift plane.
+ * * @param sc The scan containing the observation metadata (tsamp, foff, ntsteps).
+ * @param dedrift_options The drift search configuration containing the requested bounds.
+ * @return The precise maximum drift rate actually searched, in Hz/sec.
+ */
+ 
+double calculate_precise_max_drift(bliss::scan& sc, bliss::integrate_drifts_options& dedrift_options) {
+    double tsamp = sc.tsamp();
+    int time_steps = sc.ntsteps();
+    double foff_Hz = std::abs(sc.foff()) * 1e6; 
+
+    double unit_drift_resolution = foff_Hz / ((time_steps - 1) * tsamp);
+
+    double rounded_low = std::round(dedrift_options.low_rate_Hz_per_sec / unit_drift_resolution) * unit_drift_resolution;
+    double rounded_high = std::round(dedrift_options.high_rate_Hz_per_sec / unit_drift_resolution) * unit_drift_resolution;
+
+    double search_step = unit_drift_resolution * dedrift_options.resolution;
+
+    long number_drifts = std::lround(std::abs(rounded_high - rounded_low) / std::abs(search_step));
+    double precise_max_drift = rounded_low + (number_drifts - 1) * std::abs(search_step);
+    
+    return std::round(precise_max_drift * 1e7) / 1e7;
+}
+
+
+
 /**
  * @brief Main entry point for the BLISS Hit Search CLI application.
  * * @details This application implements a complete SETI search pipeline:
@@ -51,6 +86,8 @@ namespace fs = std::experimental::filesystem;
  * @param argv Array of command-line argument strings.
  * @return 0 on success, non-zero on error.
  */
+ 
+ 
 int main(int argc, char *argv[]) {
 
     // --- Configuration Variables (with defaults) ---
@@ -278,7 +315,8 @@ int main(int argc, char *argv[]) {
             }
         } else {
             // Write to file (using HitFileFactory logic implicitly via write_scan_hits_to_file)
-            bliss::write_scan_hits_to_file(sc, output_path, output_format, dedrift_options.high_rate_Hz_per_sec);
+            double final_max_drift = calculate_precise_max_drift(sc, dedrift_options);
+            bliss::write_scan_hits_to_file(sc, output_path, output_format, final_max_drift);
         }
     }
     

@@ -1,0 +1,38 @@
+name: bliss
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+
+  # Compilation / toolchain
+  - gcc_linux-64
+  - gxx_linux-64
+  - make
+  - cmake>=3.25
+  - ninja
+
+  # Scientific libraries
+  - numpy
+  - scipy
+  - matplotlib  
+  - pandas
+
+  # Libraries required by BLISS
+  - fftw
+  - hdf5
+  - hdf5-external-filter-plugins   # if this was actually required in Bliss
+  - bitshuffle
+  - cython
+
+  # I/O and compression support
+  - zlib
+  - zstd
+  - bzip2
+
+  # CUDA runtime (compatible also on hosts without a GPU)
+  - cudatoolkit=11.7
+
+  # Utilities
+  - pip

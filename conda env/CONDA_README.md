@@ -1,75 +1,75 @@
-
 ### `README_CONDA.md`
 
-Istruzioni su come io installo BLISS in questo specifico ambiente
+Instructions on how I install BLISS in this specific environment
 
-```markdown
-# Gestione dell'Ambiente e Compilazione (Conda)
+# Environment Management and Compilation (Conda)
 
-## 1. Installanzione dell'ambiente
+## 1. Environment Installation
 
-Per compilare il codice, testarlo e lavorarci, devi creare un ambiente Conda isolato con tutte le dipendenze necessarie (CMake, CUDA, HDF5, FFTW, ecc.). 
+To compile the code, test it, and work on it, you need to create an isolated Conda environment with all the necessary dependencies (CMake, CUDA, HDF5, FFTW, etc.). 
 
-Usa il file `bliss_environment.yml` presente in questa cartella:
+Use the `bliss_environment.yml` file present in this folder:
 
 ```bash
-# Crea l'ambiente
+# Create the environment
 conda env create -f bliss_environment.yml
 
-# Attiva l'ambiente
+# Activate the environment
 conda activate bliss
+
 
 ---
 
+## 2. Compilation and Installation (Build from Source)
 
-## 2. Compilazione e Installazione (Build from Source)
+Once the Conda environment is activated, you must compile the C++/CUDA source code. Make sure you are in the main project folder.
 
-Una volta attivato l'ambiente Conda, devi compilare il codice sorgente C++/CUDA. Assicurati di essere nella cartella principale del progetto.
+### Procedure:
 
-### Procedura:
+1. **Prepare the build folder:**
 
-1. **Prepara la cartella di build:**
 ```bash
 mkdir build && cd build
 
 ```
 
+2. **Configure with CMake:**
 
-2. **Configura con CMake:**
-> **ATTENZIONE:** I percorsi (path) specificati in questo comando (`/usr/bin/gcc-9`, `/usr/local/cuda/...`) sono specifici per una particolare macchina e versione di Ubuntu. **Dovrai adattarli al tuo sistema.**
-> Leggi i commenti a lato di ogni riga per sapere quale comando lanciare nel terminale per trovare il percorso corretto.
-
+> **WARNING:** The paths specified in this command (`/usr/bin/gcc-9`, `/usr/local/cuda/...`) are specific to a particular machine and Ubuntu version. **You will need to adapt them to your system.**
+> Read the comments next to each line to know which command to run in the terminal to find the correct path.
 
 ```bash
 cmake .. \
   -DCMAKE_PREFIX_PATH=$CONDA_PREFIX \
   -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.10 \
-  -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \     # Trova il path eseguendo: which nvcc
-  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-9 \          # Trova il path eseguendo: which g++-9
-  -DCMAKE_C_COMPILER=/usr/bin/gcc-9 \                  # Trova il path eseguendo: which gcc-9
-  -DCMAKE_CXX_COMPILER=/usr/bin/g++-9 \                # Trova il path eseguendo: which g++-9
-  -DCMAKE_CUDA_ARCHITECTURES=86 \                      # Architettura GPU (es: 86 per RTX serie 3000/A100, 89 per RTX serie 4000, 75 per RTX 2000)
-  -DCMAKE_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu       # Path standard delle librerie di sistema su Ubuntu/Debian. Per trovarlo esegui: gcc -print-multiarch
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \      # Find the path by running: which nvcc
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-9 \          # Find the path by running: which g++-9
+  -DCMAKE_C_COMPILER=/usr/bin/gcc-9 \                  # Find the path by running: which gcc-9
+  -DCMAKE_CXX_COMPILER=/usr/bin/g++-9 \                # Find the path by running: which g++-9
+  -DCMAKE_CUDA_ARCHITECTURES=86 \                      # GPU Architecture (e.g., 86 for RTX 3000 series/A100, 89 for RTX 4000 series, 75 for RTX 2000)
+  -DCMAKE_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu       # Standard path for system libraries on Ubuntu/Debian. To find it run: gcc -print-multiarch
 
 ```
 
+*(The `-DCMAKE_PREFIX_PATH` and `-DCMAKE_INSTALL_PREFIX` flags ensure that CMake finds libraries like HDF5 inside the Conda environment and installs the final binaries there, keeping the system clean).*
 
-*(I flag `-DCMAKE_PREFIX_PATH` e `-DCMAKE_INSTALL_PREFIX` assicurano che CMake trovi le librerie come HDF5 dentro l'ambiente Conda e vi installi i binari finali, mantenendo il sistema pulito).*
-3. **Compila e Installa:**
+3. **Compile and Install:**
+
 ```bash
-# Compila usando tutti i core disponibili per velocizzare il processo
+# Compile using all available cores to speed up the process
 make -j$(nproc)
 
-# Installa i binari di BLISS nell'ambiente Conda (nella cartella $CONDA_PREFIX/bin)
-# serve per runnare bliss in ogni cartella, il file eseguibile è presente anche senza questo passaggio però
+# Install BLISS binaries in the Conda environment (in the $CONDA_PREFIX/bin folder)
+# needed to run bliss from any folder, however the executable file is present even without this step
 make install
 
 ```
 
-
-
-Dopo l'installazione, potrai usare gli eseguibili di BLISS (es. `bliss_event_search`) da qualsiasi cartella del tuo computer, a patto che l'ambiente Conda sia attivo.
+After installation, you will be able to use the BLISS executables (e.g., `bliss_event_search`) from any folder on your computer, as long as the Conda environment is active.
 
 ---
 
+```
+
+```

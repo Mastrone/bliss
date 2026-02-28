@@ -30,14 +30,14 @@ Once the Conda environment is activated, you must compile the C++/CUDA source co
 
 ```bash
 mkdir build && cd build
-
+```
 
 2. **Configure with CMake:**
 
 > **WARNING:** The paths specified in this command (`/usr/bin/gcc-9`, `/usr/local/cuda/...`) are specific to a particular machine and Ubuntu version. **You will need to adapt them to your system.**
 > Read the comments next to each line to know which command to run in the terminal to find the correct path.
 
-```
+
 
 ```bash
 cmake .. \

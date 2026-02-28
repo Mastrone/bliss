@@ -79,10 +79,6 @@ class scan {
     /// @return A list of all detected hits.
     std::list<hit> hits();
 
-    /// @brief Computes the range of drift rates found across all channels.
-    /// @return A pair {min_drift, max_drift} in Hz/s.
-    std::pair<float, float> get_drift_range();
-
     /// @brief Gets the current compute device.
     bland::ndarray::dev device();
 
@@ -170,6 +166,19 @@ class scan {
     double  _tduration_secs;
 
     bland::ndarray::dev _device = bland::ndarray::dev::cpu;
+
+    /**
+     * @brief Populates the internal cache with a newly generated coarse channel if it does not already exist.
+     * @param coarse_channel_index The relative index of the target coarse channel.
+     */
+    void ensure_coarse_channel_cached(int coarse_channel_index);
+
+    /**
+     * @brief Applies the registered pipeline transformations to a given coarse channel.
+     * @param cc The source coarse channel to transform.
+     * @return A shared pointer to the newly transformed coarse channel.
+     */
+    std::shared_ptr<coarse_channel> apply_transforms_to_channel(std::shared_ptr<coarse_channel> cc);
 };
 
 } // namespace bliss

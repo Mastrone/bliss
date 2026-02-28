@@ -17,23 +17,26 @@ static bool ends_with(std::string_view str, std::string_view suffix) {
 }
 
 scan ScanFactory::create_from_file(std::string_view file_path, int num_fine_channels_per_coarse) {
+    // Convert string_view to std::string once to satisfy constructor requirements
+    std::string path_str(file_path);
     std::shared_ptr<IScanDataSource> datasource = nullptr;
 
-    // Implicit Strategy Pattern: select reader based on extension
+    // Implicit Strategy Pattern: select reader based on file extension
     if (ends_with(file_path, ".h5") || ends_with(file_path, ".hdf5") || ends_with(file_path, ".fil")) {
         
-        // Instantiate the HDF5/Filterbank reader
-        datasource = std::make_shared<h5_filterbank_file>(file_path);
+        // Instantiate the HDF5/Filterbank reader. 
+        // Polymorphism allows assigning the child to the base interface pointer.
+        datasource = std::make_shared<h5_filterbank_file>(path_str);
 
     } 
     // Future extension point:
     // else if (ends_with(file_path, ".raw")) {
-    //      datasource = std::make_shared<raw_file>(file_path);
+    //      datasource = std::make_shared<raw_file>(path_str);
     // }
     else {
-        // Fallback: If unknown, default to HDF5 but warn.
+        // Fallback: If unknown, default to HDF5 but warn the user.
         fmt::print("WARN: ScanFactory: Unknown file extension for '{}'. Defaulting to HDF5/Filterbank reader.\n", file_path);
-        datasource = std::make_shared<h5_filterbank_file>(file_path);
+        datasource = std::make_shared<h5_filterbank_file>(path_str);
     }
 
     if (!datasource) {

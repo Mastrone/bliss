@@ -40,6 +40,23 @@ target_link_libraries(
          stdc++fs
 )
 
+#
+# bliss_event_search
+#
+add_executable(bliss_event_search bliss_event_search.cpp)
+target_link_libraries(
+  bliss_event_search
+  PUBLIC bliss_core
+         file_types
+         bliss_preprocess
+         drift_search
+         estimators
+         bliss_serialization
+         flaggers
+         fmt::fmt-header-only
+         stdc++fs
+)
+
 install(TARGETS bliss_find_hits RUNTIME COMPONENT bliss_executables DESTINATION bin)
 # Installs executables to ship through python wheels
 install(

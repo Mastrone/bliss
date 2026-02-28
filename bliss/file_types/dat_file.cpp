@@ -11,134 +11,116 @@
 
 using namespace bliss;
 
+// ============================================================================
+// ANONYMOUS NAMESPACE (Helper Functions)
+// ============================================================================
+namespace {
 
-/**
- * @brief Formats Right Ascension (decimal hours) to "HHhMMmSS.sss".
- */
-std::string format_archours_to_sexagesimal(double src_raj) {
-    double ra_deg = src_raj * 15.0;
-
-    int ra_hours = static_cast<int>(ra_deg / 15.0);
-    int ra_minutes = static_cast<int>((ra_deg / 15.0 - ra_hours) * 60.0);
-    double ra_seconds = ((ra_deg / 15.0 - ra_hours) * 60.0 - ra_minutes) * 60.0;
-
-    return fmt::format("{:02}h{:02}m{:06.3f}s", ra_hours, ra_minutes, ra_seconds);
-}
-
-/**
- * @brief Formats Declination (decimal degrees) to "+DDdMMmSS.ss".
- */
-std::string format_degrees_to_sexagesimal(double src_dej) {
-    int dec_degrees = static_cast<int>(src_dej);
-    int dec_arcminutes = static_cast<int>((std::abs(src_dej) - std::abs(dec_degrees)) * 60.0);
-    double dec_arcseconds = ((std::abs(src_dej) - std::abs(dec_degrees)) * 60.0 - dec_arcminutes) * 60.0;
-    char dec_sign = src_dej >= 0 ? '+' : '-';
-
-    return fmt::format("{}{:02}d{:02}m{:05.2f}s", dec_sign, std::abs(dec_degrees), dec_arcminutes, dec_arcseconds);
-}
-
-/**
- * @brief Formats a list of hits into the TurboSETI table string format.
- */
-template<typename Container>
-std::string format_hits_to_dat_list(Container hits) {
-    std::string table_string;
-    auto hit_index = 1; // turbo-seti starts counting hits at 1
-    for (auto this_hit : hits) {
-        // Calculate start, end, and mid frequencies based on drift
-        auto start_freq = this_hit.start_freq_MHz;
-        auto end_freq = this_hit.start_freq_MHz + (this_hit.duration_sec * this_hit.drift_rate_Hz_per_sec)/1e6f;
-        auto mid = (start_freq + end_freq)/2.0f;
-        
-        // Format tab-separated line
-        auto dat_line = fmt::format("{:06}\t{:4f}\t{:2f}\t{:6f}\t{:6f}\t{}\t{:6f}\t{:6f}\t{:1f}\t{:6f}\t{}\t{}\n",
-                                    hit_index++,
-                                    this_hit.drift_rate_Hz_per_sec,
-                                    this_hit.snr,
-                                    mid,
-                                    mid, // "Corrected Frequency" usually same as Uncorrected for raw hits
-                                    this_hit.start_freq_index, 
-                                    this_hit.start_freq_MHz,
-                                    end_freq,
-                                    0.0, // SEFD placeholder
-                                    0.0, // SEFD_freq placeholder
-                                    this_hit.coarse_channel_number,
-                                    this_hit.binwidth);
-        table_string += dat_line;
-    }
-    return table_string;
-}
-
-void bliss::write_scan_hits_to_dat_file(scan scan_with_hits, std::string_view file_path, double max_drift_rate) {
-    auto output_file = detail::raii_file_for_write(file_path);
-
-    auto hits = scan_with_hits.hits();
-    
-    // Retrieve metadata
-    auto raj = scan_with_hits.src_raj();
-    auto dej = scan_with_hits.src_dej();
-    auto tstart = scan_with_hits.tstart();
-
-    // Handle missing optional metadata gracefully
-    std::string file_path_id{"n/a"};
-    try { file_path_id = scan_with_hits.get_file_path(); } catch (...) {}
-
-    std::string source_name{"n/a"};
-    try { source_name = scan_with_hits.source_name(); } catch (...) {}
-
-    auto formatted_raj = format_archours_to_sexagesimal(raj);
-    auto formatted_dej = format_degrees_to_sexagesimal(dej);
-
-    // Construct Header
-    std::string header =
-            fmt::format("# -------------------------- o --------------------------\n"
-                        "# File ID: {}\n"
-                        "# -------------------------- o --------------------------\n"
-                        "# Source:{}\n"
-                        "# MJD: {}\tRA: {}s\tDEC:{}\n"
-                        "# DELTAT: {:6f}\tDELTAF(Hz):  {:6f}\tmax_drift_rate: {}\tobs_length: {:2f}\n"
-                        "# --------------------------\n"
-                        "# "
-                        "Top_Hit_#\tDrift_Rate\tSNR\tUncorrected_Frequency\tCorrected_Frequency\tIndex\tfreq_start\tfreq_end\tSEFD_freq\tCoarse_Channel_Number\tFull_number_of_hits\n"
-                        "# --------------------------\n",
-                        file_path_id,
-                        source_name,
-                        tstart,
-                        formatted_raj,
-                        formatted_dej,
-                        scan_with_hits.tsamp(),
-                        scan_with_hits.foff()*1e6,
-                        max_drift_rate, 
-                        scan_with_hits.ntsteps()*scan_with_hits.tsamp());
-    
-    // Write header
-    if (write(output_file._fd, header.c_str(), header.size()) == -1) {
-        fmt::print(stderr, "ERROR: Failed to write header to dat file {}\n", file_path);
+    /**
+     * @brief Safely extracts the file path identifier from a scan.
+     * @param scan_with_hits The scan object to query.
+     * @return The file path string, or "n/a" if unavailable.
+     */
+    std::string extract_file_path_id(scan& scan_with_hits) {
+        try { 
+            return scan_with_hits.get_file_path(); 
+        } catch (...) { 
+            return "n/a"; 
+        }
     }
 
-    // Write hits
-    auto table_contents = format_hits_to_dat_list(hits);
-    if (write(output_file._fd, table_contents.c_str(), table_contents.size()) == -1) {
-        fmt::print(stderr, "ERROR: Failed to write hits to dat file {}\n", file_path);
+    /**
+     * @brief Safely extracts the source name identifier from a scan.
+     * @param scan_with_hits The scan object to query.
+     * @return The source name string, or "n/a" if unavailable.
+     */
+    std::string extract_source_name(scan& scan_with_hits) {
+        try { 
+            return scan_with_hits.source_name(); 
+        } catch (...) { 
+            return "n/a"; 
+        }
     }
-}
 
-scan bliss::read_scan_hits_from_dat_file(std::string_view file_path) {
-    auto in_file = detail::raii_file_for_read(file_path);
+    /**
+     * @brief Formats Right Ascension (decimal hours) to "HHhMMmSS.sss".
+     * @param src_raj Right Ascension in decimal hours.
+     * @return Formatted sexagesimal string.
+     */
+    std::string format_archours_to_sexagesimal(double src_raj) {
+        double ra_deg = src_raj * 15.0;
 
-    // Use std::istream wrapper around the file descriptor
-    auto in_buff   = __gnu_cxx::stdio_filebuf<char>(in_file._fd, std::ios::in);
-    auto in_stream = std::istream(&in_buff);
+        int ra_hours = static_cast<int>(ra_deg / 15.0);
+        int ra_minutes = static_cast<int>((ra_deg / 15.0 - ra_hours) * 60.0);
+        double ra_seconds = ((ra_deg / 15.0 - ra_hours) * 60.0 - ra_minutes) * 60.0;
 
-    std::string line;
-    // Regex to parse header and data lines
-    std::regex  header_regex(R"(^#\s+MJD:\s+(\S+)\s+RA:\s+(\S+)\s+DEC:(\S+))");
-    std::regex tstart_regex(R"(^#\s+DELTAT:\s+(\S+)\s+DELTAF\(Hz\):\s+(\S+)\s+max_drift_rate:\s+(\S+)\s+obs_length:\s+(\S+))");
-    std::regex  data_regex(
-            R"(^(\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+)\s+(\d+))");
+        return fmt::format("{:02}h{:02}m{:06.3f}s", ra_hours, ra_minutes, ra_seconds);
+    }
 
-    scan deserialized_scan;
-    while (std::getline(in_stream, line)) {
+    /**
+     * @brief Formats Declination (decimal degrees) to "+DDdMMmSS.ss".
+     * @param src_dej Declination in decimal degrees.
+     * @return Formatted sexagesimal string.
+     */
+    std::string format_degrees_to_sexagesimal(double src_dej) {
+        int dec_degrees = static_cast<int>(src_dej);
+        int dec_arcminutes = static_cast<int>((std::abs(src_dej) - std::abs(dec_degrees)) * 60.0);
+        double dec_arcseconds = ((std::abs(src_dej) - std::abs(dec_degrees)) * 60.0 - dec_arcminutes) * 60.0;
+        char dec_sign = src_dej >= 0 ? '+' : '-';
+
+        return fmt::format("{}{:02}d{:02}m{:05.2f}s", dec_sign, std::abs(dec_degrees), dec_arcminutes, dec_arcseconds);
+    }
+
+    /**
+     * @brief Constructs the comprehensive header block for a .dat file.
+     * @param scan_with_hits The scan object containing observational metadata.
+     * @param max_drift_rate The maximum drift rate evaluated during the search.
+     * @return The formatted header string.
+     */
+    std::string build_dat_header(scan& scan_with_hits, double max_drift_rate) {
+        auto raj = scan_with_hits.src_raj();
+        auto dej = scan_with_hits.src_dej();
+        auto tstart = scan_with_hits.tstart();
+
+        std::string file_path_id = extract_file_path_id(scan_with_hits);
+        std::string source_name = extract_source_name(scan_with_hits);
+
+        auto formatted_raj = format_archours_to_sexagesimal(raj);
+        auto formatted_dej = format_degrees_to_sexagesimal(dej);
+
+        return fmt::format("# -------------------------- o --------------------------\n"
+                           "# File ID: {}\n"
+                           "# -------------------------- o --------------------------\n"
+                           "# Source:{}\n"
+                           "# MJD: {}\tRA: {}s\tDEC:{}\n"
+                           "# DELTAT: {:6f}\tDELTAF(Hz):  {:6f}\tmax_drift_rate: {}\tobs_length: {:2f}\n"
+                           "# --------------------------\n"
+                           "# "
+                           "Top_Hit_#\tDrift_Rate\tSNR\tUncorrected_Frequency\tCorrected_Frequency\tIndex\tfreq_start\tfreq_end\tSEFD_freq\tCoarse_Channel_Number\tFull_number_of_hits\n"
+                           "# --------------------------\n",
+                           file_path_id,
+                           source_name,
+                           tstart,
+                           formatted_raj,
+                           formatted_dej,
+                           scan_with_hits.tsamp(),
+                           scan_with_hits.foff()*1e6,
+                           max_drift_rate, 
+                           scan_with_hits.ntsteps()*scan_with_hits.tsamp());
+    }
+
+    /**
+     * @brief Parses a single line from a .dat file and updates the scan or hit structures accordingly.
+     * @param line The string line read from the file.
+     * @param deserialized_scan The scan object being reconstructed.
+     * @param header_regex Compiled regex for extracting header parameters.
+     * @param tstart_regex Compiled regex for extracting time parameters.
+     * @param data_regex Compiled regex for extracting hit data parameters.
+     */
+    void process_dat_file_line(const std::string& line, scan& deserialized_scan, 
+                               const std::regex& header_regex, 
+                               const std::regex& tstart_regex, 
+                               const std::regex& data_regex) {
         std::smatch match;
         if (std::regex_search(line, match, header_regex)) {
             deserialized_scan.set_tstart(std::stod(match[1]));
@@ -159,5 +141,83 @@ scan bliss::read_scan_hits_from_dat_file(std::string_view file_path) {
             // we would need to push them into a container inside deserialized_scan.
         }
     }
+
+    /**
+     * @brief Formats a list of hits into the TurboSETI table string format.
+     * @param hits Container of hit structures to be formatted.
+     * @return Tab-separated string payload representing the hits table.
+     */
+    template<typename Container>
+    std::string format_hits_to_dat_list(Container hits) {
+        std::string table_string;
+        auto hit_index = 1; // turbo-seti starts counting hits at 1
+        
+        for (auto this_hit : hits) {
+            // Calculate start, end, and mid frequencies based on drift
+            auto start_freq = this_hit.start_freq_MHz;
+            auto end_freq = this_hit.start_freq_MHz + (this_hit.duration_sec * this_hit.drift_rate_Hz_per_sec)/1e6f;
+            auto mid = (start_freq + end_freq)/2.0f;
+            
+            // Format tab-separated line
+            auto dat_line = fmt::format("{:06}\t{:4f}\t{:2f}\t{:6f}\t{:6f}\t{}\t{:6f}\t{:6f}\t{:1f}\t{:6f}\t{}\t{}\n",
+                                        hit_index++,
+                                        this_hit.drift_rate_Hz_per_sec,
+                                        this_hit.snr,
+                                        mid,
+                                        mid, // "Corrected Frequency" usually same as Uncorrected for raw hits
+                                        this_hit.start_freq_index, 
+                                        this_hit.start_freq_MHz,
+                                        end_freq,
+                                        0.0, // SEFD placeholder
+                                        0.0, // SEFD_freq placeholder
+                                        this_hit.coarse_channel_number,
+                                        this_hit.binwidth);
+            table_string += dat_line;
+        }
+        return table_string;
+    }
+}
+
+// ============================================================================
+// FILE I/O IMPLEMENTATIONS
+// ============================================================================
+
+void bliss::write_scan_hits_to_dat_file(scan scan_with_hits, std::string_view file_path, double max_drift_rate) {
+    auto output_file = detail::raii_file_for_write(file_path);
+    auto hits = scan_with_hits.hits();
+    
+    // Construct and write header
+    std::string header = build_dat_header(scan_with_hits, max_drift_rate);
+    if (write(output_file._fd, header.c_str(), header.size()) == -1) {
+        fmt::print(stderr, "ERROR: Failed to write header to dat file {}\n", file_path);
+    }
+
+    // Write hits
+    auto table_contents = format_hits_to_dat_list(hits);
+    if (write(output_file._fd, table_contents.c_str(), table_contents.size()) == -1) {
+        fmt::print(stderr, "ERROR: Failed to write hits to dat file {}\n", file_path);
+    }
+}
+
+scan bliss::read_scan_hits_from_dat_file(std::string_view file_path) {
+    auto in_file = detail::raii_file_for_read(file_path);
+
+    // Use std::istream wrapper around the file descriptor
+    auto in_buff   = __gnu_cxx::stdio_filebuf<char>(in_file._fd, std::ios::in);
+    auto in_stream = std::istream(&in_buff);
+
+    // Regex to parse header and data lines
+    std::regex  header_regex(R"(^#\s+MJD:\s+(\S+)\s+RA:\s+(\S+)\s+DEC:(\S+))");
+    std::regex tstart_regex(R"(^#\s+DELTAT:\s+(\S+)\s+DELTAF\(Hz\):\s+(\S+)\s+max_drift_rate:\s+(\S+)\s+obs_length:\s+(\S+))");
+    std::regex  data_regex(
+            R"(^(\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+)\s+(\d+))");
+
+    scan deserialized_scan;
+    std::string line;
+    
+    while (std::getline(in_stream, line)) {
+        process_dat_file_line(line, deserialized_scan, header_regex, tstart_regex, data_regex);
+    }
+    
     return deserialized_scan;
 }

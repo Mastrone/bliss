@@ -30,6 +30,24 @@ add_executable(bliss_find_hits bliss_find_hits.cpp)
 target_link_libraries(
   bliss_find_hits
   PUBLIC bliss_core
+         file_types
+         bliss_preprocess
+         drift_search
+         estimators
+         bliss_serialization
+         flaggers
+         fmt::fmt-header-only
+         stdc++fs
+)
+
+#
+# bliss_event_search
+#
+add_executable(bliss_event_search bliss_event_search.cpp)
+target_link_libraries(
+  bliss_event_search
+  PUBLIC bliss_core
+         file_types
          bliss_preprocess
          drift_search
          estimators

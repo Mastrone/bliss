@@ -14,22 +14,29 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
+/**
+ * @brief Binds the Estimators module functions to Python.
+ * @details Exposes noise estimation and spectral kurtosis algorithms.
+ * @param m The nanobind module instance.
+ */
 void bind_pyestimators(nb::module_ m) {
 
+    // --- Spectral Kurtosis Bindings ---
     m.def("estimate_spectral_kurtosis",
           nb::overload_cast<const bland::ndarray &, int32_t, int32_t, float>(&bliss::estimate_spectral_kurtosis),
           "spectrum_grid"_a,
           "N"_a,
           "M"_a,
           "d"_a = 2,
-          "Compute spectral kurtosis of the given spectra");
+          "Compute spectral kurtosis of the given spectra raw array.");
 
     m.def("estimate_spectral_kurtosis",
           nb::overload_cast<bliss::coarse_channel &, float>(&bliss::estimate_spectral_kurtosis),
           "fil_data"_a,
           "d"_a = 2,
-          "Compute spectral kurtosis of the given filterbank data");
+          "Compute spectral kurtosis of the given filterbank data (automatically determining N and M).");
 
+    // --- Noise Estimation Bindings ---
     nb::enum_<bliss::noise_power_estimator>(m, "noise_power_estimator")
             .value("stddev", bliss::noise_power_estimator::STDDEV)
             .value("mad", bliss::noise_power_estimator::MEAN_ABSOLUTE_DEVIATION);
@@ -39,9 +46,11 @@ void bind_pyestimators(nb::module_ m) {
             .def_rw("estimator_method", &bliss::noise_power_estimate_options::estimator_method)
             .def_rw("masked_estimate", &bliss::noise_power_estimate_options::masked_estimate);
 
+    // Wrapper lambda for raw ndarray to handle conversion to bland::ndarray
     m.def("estimate_noise_power", [](nb::ndarray<> arr, bliss::noise_power_estimate_options opts) {
         return bliss::estimate_noise_power(nb_to_bland(arr), opts);
     });
+    
     m.def("estimate_noise_power",
           nb::overload_cast<bland::ndarray, bliss::noise_power_estimate_options>(&bliss::estimate_noise_power));
     m.def("estimate_noise_power",

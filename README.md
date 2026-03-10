@@ -7,7 +7,7 @@
 
 </p>
 
-![alien teaching signals](docs/alien-teaching-signals.jpeg)
+![bliss_copertina](docs/bliss_copertina.png)
 
 BLISS is a toolkit for finding narrowband doppler-drifting signals. This is frequently used to search for [technosignatures](https://en.wikipedia.org/wiki/Technosignature). 
 

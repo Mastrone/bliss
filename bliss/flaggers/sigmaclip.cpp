@@ -11,14 +11,20 @@ using namespace bliss;
 bland::ndarray bliss::flag_sigmaclip(const bland::ndarray &data, int max_iter, float low, float high) {
 
     constexpr float eps = 1e-6;
+    // Initialize empty mask (uint8) on the correct device
     auto            rfi = bland::zeros(data.shape(), bland::ndarray::datatype::uint8, data.device());
 
+    // Initial pass statistics
     auto [mean, stddev] = bland::masked_mean_stddev(data, rfi);
+    
     for (int iter = 0; iter < max_iter; ++iter) {
-        // fmt::print("iter {}:  mean={}    std={}\n", iter, mean.scalarize<float>(), stddev.scalarize<float>());
+        // Flag data outside [mean - low*std, mean + high*std]
         rfi = (data < (mean - stddev * low)) + (data > (mean + stddev * high));
 
+        // Re-calculate statistics ignoring the newly flagged values
         auto [new_mean, new_std] = bland::masked_mean_stddev(data, rfi);
+        
+        // Check for convergence
         if (std::abs((new_mean - mean).scalarize<float>()) < eps &&
             std::abs((new_std - stddev).scalarize<float>()) < eps) {
             break;
@@ -36,12 +42,11 @@ coarse_channel bliss::flag_sigmaclip(coarse_channel cc_data, int max_iter, float
     bland::ndarray spectrum_grid = cc_data.data();
     bland::ndarray rfi_flags     = cc_data.mask();
 
-    // 2. Generate SK flag
+    // Generate Sigma Clip flags
     auto rfi = flag_sigmaclip(spectrum_grid, max_iter, low, high);
 
-    auto accumulated_rfi = rfi_flags + rfi; // a | operator would be more appropriate
-
-    // 3. Store back accumulated rfi
+    // Combine with existing flags
+    auto accumulated_rfi = rfi_flags + rfi; 
     cc_data.set_mask(accumulated_rfi);
 
     return cc_data;

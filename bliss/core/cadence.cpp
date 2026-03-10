@@ -7,6 +7,11 @@
 
 using namespace bliss;
 
+/**
+ * @brief Helper to derive a single target name from a list of scans.
+ * @details Checks consistency. If scans have different names, it concatenates them
+ * with "::" and issues a warning.
+ */
 std::string extract_source_name_from_scans(std::vector<scan> scans) {
     std::string source_name{};
     for (auto &sc : scans) {
@@ -36,13 +41,6 @@ bliss::observation_target::observation_target(std::vector<scan> filterbanks) {
     _target_name = extract_source_name_from_scans(_scans);
 }
 
-bliss::observation_target::observation_target(std::vector<std::string> filterbank_paths, int fine_channels_per_coarse) {
-    for (const auto &filterbank_path : filterbank_paths) {
-        _scans.emplace_back(filterbank_path, fine_channels_per_coarse);
-    }
-    _target_name = extract_source_name_from_scans(_scans);
-}
-
 bool bliss::observation_target::validate_scan_consistency() {
     // Validate consistency of scans in this observation target. Each scan should:
     // * have the same number of coarse channels
@@ -58,8 +56,8 @@ bool bliss::observation_target::validate_scan_consistency() {
         nchans = _scans[0].nchans();
     }
     for (const auto &sc : _scans) {
-        // For double comparison can probably lower epsilon, but this field is
-        // in MHz which gives us 1 Hz error and should be sufficient
+        // Comparison with epsilon for floating point safety.
+        // 1 Hz error tolerance (1e-6 MHz) is sufficient for this domain.
         if ((std::abs(sc.fch1() - fch1) < 1e-6) || (std::abs(sc.foff() - foff) < 1e-6) || (sc.nchans() != nchans)) {
             fmt::print("INFO: observation_target::validate_scan_consistency: one of `fch1`, `foff`, `nchans` does not match");
             return false;
@@ -94,47 +92,16 @@ bliss::observation_target bliss::observation_target::slice_observation_channels(
     return target_coarse_channel;
 }
 
-bland::ndarray::dev bliss::observation_target::device() {
-    return _device;
-}
-
-void bliss::observation_target::set_device(bland::ndarray::dev& device, bool verbose) {
-    if (device.device_type == bland::ndarray::dev::cuda.device_type ||
-        device.device_type == bland::ndarray::dev::cuda_managed.device_type) {
-        if (!bland::g_config.check_is_valid_cuda_device(device.device_id, verbose)) {
-            throw std::runtime_error("set_device received invalid cuda device");
-        }
-    }
-    _device = device;
-
-    for (auto &target_scan : _scans) {
-        target_scan.set_device(device, false);
-    }
-}
-
-void bliss::observation_target::set_device(std::string_view dev_str, bool verbose) {
-    bland::ndarray::dev device = dev_str;
-    set_device(device, verbose);
-}
-
 
 bliss::cadence::cadence(std::vector<observation_target> observations) : _observations(observations) {}
 
-bliss::cadence::cadence(std::vector<std::vector<std::string>> observations, int fine_channels_per_coarse) {
-    for (const auto &target : observations) {
-        _observations.emplace_back(target, fine_channels_per_coarse);
-    }
-}
-
 bool bliss::cadence::validate_scan_consistency() {
-    // Validate consistency of scans in this observation target. Each scan should:
-    // * have the same number of coarse channels
-    // * have the same fch1
-
     double fch1;
     double foff;
     int nchans;
     bool found_valid_scan = false;
+    
+    // Find the first valid scan to use as a reference template
     for (auto &obs: _observations) {
         if (!obs._scans.empty()) {
             fch1 = obs._scans[0].fch1();
@@ -144,6 +111,8 @@ bool bliss::cadence::validate_scan_consistency() {
             break;
         }
     }
+    
+    // Check all scans in all observations against the template
     for (auto &obs: _observations) {
         for (auto & sc : obs._scans) {
             if ((std::abs(sc.fch1() - fch1) < 1e-6) || (std::abs(sc.foff() - foff) < 1e-6) || sc.nchans() != nchans) {
@@ -157,7 +126,6 @@ bool bliss::cadence::validate_scan_consistency() {
 
 int bliss::cadence::get_coarse_channel_with_frequency(double frequency) {
     if (validate_scan_consistency()) {
-        // Since they're consistent we can use any of them...
         for (auto &obs: _observations) {
             if (!obs._scans.empty()) {
                 return obs._scans[0].get_coarse_channel_with_frequency(frequency);
@@ -169,7 +137,6 @@ int bliss::cadence::get_coarse_channel_with_frequency(double frequency) {
 
 int bliss::cadence::get_number_coarse_channels() {
     if (validate_scan_consistency()) {
-        // Since they're consistent we can use any of them...
         for (auto &obs: _observations) {
             if (!obs._scans.empty()) {
                 return obs._scans[0].get_number_coarse_channels();
@@ -185,28 +152,4 @@ bliss::cadence bliss::cadence::slice_cadence_channels(int64_t start_channel, int
         cadence_coarse_channel._observations.push_back(obs.slice_observation_channels(start_channel, count));
     }
     return cadence_coarse_channel;
-}
-
-bland::ndarray::dev bliss::cadence::device() {
-    return _device;
-}
-
-void bliss::cadence::set_device(bland::ndarray::dev& device, bool verbose) {
-    if (device.device_type == bland::ndarray::dev::cuda.device_type ||
-        device.device_type == bland::ndarray::dev::cuda_managed.device_type) {
-        if (!bland::g_config.check_is_valid_cuda_device(device.device_id, verbose)) {
-            throw std::runtime_error("set_device received invalid cuda device");
-        }
-    }
-
-    _device = device;
-
-    for (auto &target : _observations) {
-        target.set_device(device, false);
-    }
-}
-
-void bliss::cadence::set_device(std::string_view dev_str, bool verbose) {
-    bland::ndarray::dev device = dev_str;
-    set_device(device, verbose);
 }

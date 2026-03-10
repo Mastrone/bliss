@@ -1,100 +1,146 @@
 #pragma once
 
-// #include "convenience/datatypedefs.hpp"
+#include <bland/ndarray.hpp>
 #include <H5Cpp.h>
-#include <bland/bland.hpp>
-#include <cstdint>
-#include <stdexcept>
+#include <core/scan_datasource.hpp>
+
 #include <string>
 #include <string_view>
 #include <vector>
 #include <optional>
-
-#include <fmt/format.h>
+#include <cstdint>
 
 namespace bliss {
 
 /**
- * Read an H5 file, parse attributes, and make underlying data available
- *
- * This is specific to H5 filterbank files, so there's a few assumptions:
- *
- * This is based on the CLASS FILTERBANK with VERSION 1.0. This contains two H5 datasets:
- * `data` and `mask` that are readable.
- *
- * The dataset metadata fields are all optional for now until I can find a spec that
- * indicates what it should really be.
+ * @brief Reader for HDF5 Filterbank files.
+ * @details Extracts metadata and reads spectral data and masks from HDF5 formatted files.
+ * The class eagerly caches metadata upon instantiation to guarantee O(1) retrieval times 
+ * during compute-heavy processing loops.
  */
-class h5_filterbank_file {
+class h5_filterbank_file : public IScanDataSource {
   public:
-    h5_filterbank_file(std::string_view file_path);
-
     /**
-     * Read an HDF5 file-scoped attribute with the given key. The return type of the value is given by
-     * template parameter `T`.
-     *
-     * WARNING: An incorrect template type will result in unexpected return value
-     * since the type is not checked to match the template parameter.
+     * @brief Constructs an HDF5 Filterbank file reader and builds the metadata cache.
+     * @details Opens the file and eagerly loads all relevant metadata into memory.
+     * @param file_path The path to the HDF5 file.
      */
-    template <typename T>
-    T read_file_attr(const std::string &key);
+    explicit h5_filterbank_file(std::string_view file_path);
 
     /**
-     * Read an HDF5 dataset-scoped attribute of the `data` dataset with the given key. The return type of the value is
-     * given by template parameter `T`.
-     *
-     * WARNING: An incorrect template type will result in unexpected return value
-     * since the type is not checked to match the template parameter.
+     * @brief Reads a physical subset (hyperslab) of the spectral data from disk.
+     * @param offset The starting coordinate for each dimension.
+     * @param count The number of elements to read along each dimension.
+     * @return A floating-point tensor containing the waterfall data block.
      */
-    template <typename T>
-    T read_data_attr(const std::string &key);
+    bland::ndarray read_data(const std::vector<int64_t>& offset = {}, const std::vector<int64_t>& count = {});
 
     /**
-     * Return the shape of `data` dataset with dim ordering [time, feed_id, frequency]. This does
-     * assumption and error handling and is guaranteed to return a vector of size 3
-     * TODO: should it be an array if we know it's 3
-    */
-    std::vector<int64_t> get_data_shape();
-
-    /**
-     * Read the `data` dataset to a new ndarray
+     * @brief Reads the RFI mask hyperslab corresponding to the data extent.
+     * @param offset The starting coordinate for each dimension.
+     * @param count The number of elements to read along each dimension.
+     * @return An unsigned 8-bit integer tensor representing the RFI mask.
      */
-    bland::ndarray read_data(std::vector<int64_t> offset = {}, std::vector<int64_t> count = {});
+    bland::ndarray read_mask(const std::vector<int64_t>& offset = {}, const std::vector<int64_t>& count = {});
 
     /**
-     * Read the `mask` dataset to a new ndarray
-     */
-    bland::ndarray read_mask(std::vector<int64_t> offset = {}, std::vector<int64_t> count = {});
-
-    /**
-     * Return a high level string representation of the file (file path, file attributes, datasets + axes...)
+     * @brief Generates a printable representation of the file object.
+     * @return Formatted string containing the file path.
      */
     std::string repr();
 
     /**
-     * Return the path to the source file
+     * @brief Returns the system path to the opened HDF5 file.
+     * @return The file path string.
      */
     std::string get_file_path() const;
 
+    // --- Cached Metadata Getters ---
+    std::vector<int64_t> get_data_shape();
+    double get_fch1() const;
+    double get_foff() const;
+    double get_tsamp() const;
+    double get_tstart() const;
+    std::string get_source_name() const;
+
+    std::optional<int64_t> get_machine_id() const;
+    std::optional<int64_t> get_telescope_id() const;
+    std::optional<double> get_src_dej() const;
+    std::optional<double> get_src_raj() const;
+    std::optional<double> get_az_start() const;
+    std::optional<double> get_za_start() const;
+    std::optional<int64_t> get_data_type() const;
+    std::optional<int64_t> get_nbits() const;
+    std::optional<int64_t> get_nchans() const;
+    std::optional<int64_t> get_nifs() const;
+
   private:
-    H5::H5File  _h5_file_handle;
+    H5::H5File _h5_file_handle;
     H5::DataSet _h5_data_handle;
-    std::optional<H5::DataSet> _h5_mask_handle;
-};
+    H5::DataSet _h5_mask_handle;
 
-template <typename T>
-T bliss::h5_filterbank_file::read_file_attr(const std::string &key) {
+    // Cached mandatory metadata
+    double _fch1;
+    double _foff;
+    double _tsamp;
+    double _tstart;
+    std::string _source_name;
 
-    T val;
-    if (_h5_file_handle.attrExists(key)) {
-        auto attr  = _h5_file_handle.openAttribute(key);
-        auto dtype = attr.getDataType();
-        attr.read(dtype, val);
-        return val;
-    } else {
-        auto err_msg = fmt::format("H5 file does not have an attribute key '{}'\n", key);
-        throw std::invalid_argument(err_msg);
+    // Cached optional metadata
+    std::optional<int64_t> _machine_id;
+    std::optional<int64_t> _telescope_id;
+    std::optional<double> _src_dej;
+    std::optional<double> _src_raj;
+    std::optional<double> _az_start;
+    std::optional<double> _za_start;
+    std::optional<int64_t> _data_type;
+    std::optional<int64_t> _nbits;
+    std::optional<int64_t> _nchans;
+    std::optional<int64_t> _nifs;
+
+    std::vector<int64_t> _data_shape;
+
+    /**
+     * @brief Opens the HDF5 file and binds the dataset handles.
+     * @param file_path The path to the HDF5 file.
+     * @throws H5::FileIException if the data dataset cannot be opened.
+     */
+    void open_file_and_datasets(std::string_view file_path);
+
+    /**
+     * @brief Loads all mandatory and optional metadata into the class attributes.
+     */
+    void load_all_metadata();
+
+    /**
+     * @brief Parses dimension labels to determine the physical shape of the data.
+     * @return A vector representing the ordered extents of the data tensor.
+     */
+    std::vector<int64_t> compute_data_shape();
+
+    /**
+     * @brief Reads a specific attribute from the HDF5 dataset.
+     * @tparam T The expected C++ return type.
+     * @param key The name of the attribute.
+     * @return The parsed attribute value.
+     */
+    template <typename T>
+    T read_data_attr(const std::string &key) const;
+
+    /**
+     * @brief Safely attempts to read an optional attribute.
+     * @tparam T The expected C++ return type.
+     * @param key The name of the attribute.
+     * @return An std::optional containing the value if present, or std::nullopt.
+     */
+    template <typename T>
+    std::optional<T> read_optional(const std::string &key) const {
+        try {
+            return read_data_attr<T>(key);
+        } catch (...) {
+            return std::nullopt;
+        }
     }
-}
+};
 
 } // namespace bliss

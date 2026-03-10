@@ -1,10 +1,10 @@
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_vector.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_templated.hpp>
 
 #include <core/hit.hpp>
+#include <core/scan_metadata.hpp> // Added scan_metadata include
 #include <file_types/cpnp_files.hpp>
 
 #include <fmt/core.h>
@@ -61,22 +61,28 @@ TEST_CASE("capnp coarse_channel hits", "[serialization]") {
     SECTION("coarse_channel with hits", "round trip a coarse_channel that has hits") {
 
         auto coarse_channels = std::map<int, std::shared_ptr<bliss::coarse_channel>>();
-        auto original_cc = bliss::coarse_channel(1000 /* fch1 */,
-                                                1 /* foff */,
-                                                0 /* machine_id */,
-                                                32 /* nbits */,
-                                                1000000 /* nchans */,
-                                                18 /* nsteps */,
-                                                1 /* nifs */,
-                                                "test" /* source_name */,
-                                                4 /* src_dej */,
-                                                2 /* src_raj */,
-                                                6 /* telescope_id */,
-                                                17 /* tsamp */,
-                                                54321 /* tstart */,
-                                                1 /* datatype */,
-                                                0 /* az_start */,
-                                                0 /* za_start */);
+        
+        // MODIFICATION: Use scan_metadata instead of 16 arguments
+        bliss::scan_metadata meta;
+        meta.fch1 = 1000;
+        meta.foff = 1;
+        meta.machine_id = 0;
+        meta.nbits = 32;
+        meta.nchans = 1000000;
+        meta.ntsteps = 18;
+        meta.nifs = 1;
+        meta.source_name = "test";
+        meta.src_dej = 4;
+        meta.src_raj = 2;
+        meta.telescope_id = 6;
+        meta.tsamp = 17;
+        meta.tstart = 54321;
+        meta.data_type = 1;
+        meta.az_start = 0;
+        meta.za_start = 0;
+
+        auto original_cc = bliss::coarse_channel(meta);
+
         std::list<bliss::hit> original_hits;
         original_hits.push_back({
             .start_freq_index = 10,
@@ -137,22 +143,28 @@ TEST_CASE("capnp scan hits", "[serialization]") {
     SECTION("scan with hits", "round trip a scan that has hits in two sequential coarse channels") {
 
         auto coarse_channels = std::map<int, std::shared_ptr<bliss::coarse_channel>>();
-        auto first_cc = std::make_shared<bliss::coarse_channel>(1000 /* fch1 */,
-                                                1 /* foff */,
-                                                0 /* machine_id */,
-                                                32 /* nbits */,
-                                                1000000 /* nchans */,
-                                                18 /* nsteps */,
-                                                1 /* nifs */,
-                                                "test" /* source_name */,
-                                                4 /* src_dej */,
-                                                2 /* src_raj */,
-                                                6 /* telescope_id */,
-                                                17 /* tsamp */,
-                                                54321 /* tstart */,
-                                                1 /* datatype */,
-                                                0 /* az_start */,
-                                                0 /* za_start */);
+        
+        // MODIFICATION: Use scan_metadata for first_cc
+        bliss::scan_metadata meta1;
+        meta1.fch1 = 1000;
+        meta1.foff = 1;
+        meta1.machine_id = 0;
+        meta1.nbits = 32;
+        meta1.nchans = 1000000;
+        meta1.ntsteps = 18;
+        meta1.nifs = 1;
+        meta1.source_name = "test";
+        meta1.src_dej = 4;
+        meta1.src_raj = 2;
+        meta1.telescope_id = 6;
+        meta1.tsamp = 17;
+        meta1.tstart = 54321;
+        meta1.data_type = 1;
+        meta1.az_start = 0;
+        meta1.za_start = 0;
+
+        auto first_cc = std::make_shared<bliss::coarse_channel>(meta1);
+
         std::list<bliss::hit> first_cc_hits;
         first_cc_hits.push_back({
             .start_freq_index = 10,
@@ -169,22 +181,12 @@ TEST_CASE("capnp scan hits", "[serialization]") {
         });
         first_cc->set_hits(first_cc_hits);
 
-        auto second_cc = std::make_shared<bliss::coarse_channel>(1001000 /* fch1 */,
-                                                1 /* foff */,
-                                                0 /* machine_id */,
-                                                32 /* nbits */,
-                                                1000000 /* nchans */,
-                                                18 /* nsteps */,
-                                                1 /* nifs */,
-                                                "test" /* source_name */,
-                                                4 /* src_dej */,
-                                                2 /* src_raj */,
-                                                6 /* telescope_id */,
-                                                17 /* tsamp */,
-                                                54321 /* tstart */,
-                                                1 /* datatype */,
-                                                0 /* az_start */,
-                                                0 /* za_start */);
+        // MODIFICATION: Use scan_metadata for second_cc (copy and modify)
+        bliss::scan_metadata meta2 = meta1;
+        meta2.fch1 = 1001000;
+
+        auto second_cc = std::make_shared<bliss::coarse_channel>(meta2);
+
         std::list<bliss::hit> hits_for_2nd_cc;
         hits_for_2nd_cc.push_back({
             .start_freq_index = 200,
@@ -243,4 +245,3 @@ TEST_CASE("capnp scan hits", "[serialization]") {
         } while(++deserialized_hit_iter != deserialized_hits.end() && ++origianl_hit_iter != first_cc_hits.end());
     }
 }
-

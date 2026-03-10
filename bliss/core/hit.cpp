@@ -1,4 +1,3 @@
-
 #include <core/hit.hpp>
 
 #include <fmt/core.h>
@@ -12,6 +11,7 @@ std::string bliss::hit::repr() const {
 }
 
 hit::state_tuple bliss::hit::get_state() const {
+    // Pack essential fields into a tuple for easy transport or serialization.
     return std::make_tuple(start_freq_index,
                            start_freq_MHz,
                            rate_index,
@@ -26,6 +26,7 @@ hit::state_tuple bliss::hit::get_state() const {
 }
 
 void bliss::hit::set_state(state_tuple state) {
+    // Unpack fields from the tuple to restore the hit state.
     start_freq_index      = std::get<0>(state);
     start_freq_MHz        = std::get<1>(state);
     rate_index            = std::get<2>(state);

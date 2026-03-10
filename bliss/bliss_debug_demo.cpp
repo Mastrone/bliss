@@ -1,4 +1,3 @@
-
 #include <core/scan.hpp>
 #include <core/cadence.hpp>
 #include <estimators/noise_estimate.hpp>
@@ -11,6 +10,7 @@
 #include <flaggers/spectral_kurtosis.hpp>
 #include <file_types/cpnp_files.hpp>
 #include <file_types/events_file.hpp>
+#include <file_types/scan_factory.hpp>
 
 #include <preprocess/passband_static_equalize.hpp>
 
@@ -24,6 +24,13 @@
 #include <iostream>
 #include "clipp.h"
 
+/**
+ * @brief Developer sandbox / debug application.
+ * * @details This file is used for testing individual components of the BLISS library
+ * in isolation. It is not intended for production use.
+ * It currently demonstrates reading a file, generating a channel response,
+ * and performing basic signal processing steps (many of which are commented out for flexibility).
+ */
 int main(int argc, char *argv[]) {
 
     std::string scan_file;
@@ -70,13 +77,16 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    // Example of generating a synthetic PFB response for validation
     // auto h_resp = bliss::gen_coarse_channel_response(131072, 2048, 4);
     // auto h_resp = bliss::gen_coarse_channel_response(131072, 2048, 4);
     auto h_resp = bliss::gen_coarse_channel_response(1048576, 192, 12);
 
-    auto pipeline_object = bliss::scan(scan_file, nchan_per_coarse);
-
+    auto pipeline_object = bliss::ScanFactory::create_from_file(scan_file, nchan_per_coarse);
+    
+    // Access raw data for debugging
     auto cc = pipeline_object.read_coarse_channel(0);
+
 
     // pipeline_object = pipeline_object.slice_observation_channels(coarse_channel, number_coarse_channels);
 

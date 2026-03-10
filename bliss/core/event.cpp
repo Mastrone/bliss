@@ -1,4 +1,3 @@
-
 #include <core/event.hpp>
 #include <vector>
 
@@ -14,6 +13,7 @@ std::string bliss::event::repr() {
     for (auto &hit : hits) {
         hit_reprs.push_back(hit.repr());
     }
+    // Format the event summary followed by the list of individual hits.
     auto r = fmt::format("event: .starting_frequency_Hz={:.0f} .average_drift_rate_Hz_per_sec={:.2f}"
                          ".average_power={} .average_snr={} .event_start_seconds={} .event_end_seconds={}\n"
                          ".hits=[{}]",

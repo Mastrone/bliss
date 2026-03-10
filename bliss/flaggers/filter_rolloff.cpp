@@ -13,8 +13,13 @@ coarse_channel bliss::flag_filter_rolloff(coarse_channel cc_data, float rolloff_
     bland::ndarray rfi_flags = cc_data.mask();
 
     auto nchans = rfi_flags.shape()[1];
+    // Calculate number of channels to flag on each side
     int64_t one_sided_channels = std::round(nchans * rolloff_width);
+    
+    // Flag the left edge (0 to N)
     bland::slice(rfi_flags, {1, 0, one_sided_channels}) = bland::slice(rfi_flags, {1, 0, one_sided_channels}) + static_cast<uint8_t>(flag_values::filter_rolloff);
+    
+    // Flag the right edge (Total-N to Total)
     bland::slice(rfi_flags, {1, -one_sided_channels, nchans}) = bland::slice(rfi_flags, {1, -one_sided_channels, nchans}) + static_cast<uint8_t>(flag_values::filter_rolloff);
 
     cc_data.set_mask(rfi_flags);

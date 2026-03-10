@@ -1,4 +1,3 @@
-
 #include <preprocess/normalize.hpp>
 
 #include <bland/ndarray.hpp>
@@ -15,8 +14,12 @@ using namespace bliss;
 
 coarse_channel bliss::normalize(coarse_channel cc) {
     auto data = cc.data();
+    // Compute the global maximum of the channel
     auto norm_value = bland::max(data);
+    
+    // Divide everything by max to bring range to [0, 1]
     auto normalized = bland::divide(data, norm_value);
+    
     cc.set_data(normalized);
     return cc;
 }

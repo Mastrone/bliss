@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <bland/ndarray.hpp>
@@ -9,56 +8,50 @@
 namespace bliss {
 
 /**
- * Which method to use to estimate noise power mean and variance of a drift spectrum detection plane.
- *
- *
- * MEAN_ABSOLUTE_DEVIATION estimate the noise power mean using MAD (Median Absolute Deviation)
- * which is the median of absolute magnitude of deviation from the median
+ * @brief Method selector for noise estimation.
  */
 enum class noise_power_estimator {
-    STDDEV,
-    MEAN_ABSOLUTE_DEVIATION,
-};
-
-struct noise_power_estimate_options {
-    noise_power_estimator estimator_method;
-    bool                  masked_estimate = true;
+    STDDEV,                   ///< Standard Mean and Variance (sensitive to outliers).
+    MEAN_ABSOLUTE_DEVIATION,  ///< Median Absolute Deviation (MAD), robust against RFI outliers.
 };
 
 /**
- * Estimate noise power statistics of the array using the given method. Noise stats available are
- *
- * * noise floor: the estimated magnitude of noise samples.
- * * noise power: the noise power (how much noise deviates from the noise floor)
- *
+ * @brief Configuration options for noise estimation.
+ */
+struct noise_power_estimate_options {
+    noise_power_estimator estimator_method;
+    bool                  masked_estimate = true; ///< If true, excludes flagged samples from the estimate.
+};
+
+/**
+ * @brief Estimates noise statistics (floor and power) from a raw array.
+ * @param x Input data.
+ * @param options Estimation method (STDDEV or MAD).
+ * @return A `noise_stats` object containing the computed floor and power.
  */
 [[nodiscard]] noise_stats estimate_noise_power(bland::ndarray x, noise_power_estimate_options options);
 
 /**
- * Estimate noise power statistics of a coarse channel (this can include a flagged/masked estimate)
+ * @brief Estimates noise statistics for a coarse channel.
+ * @details If `options.masked_estimate` is true, this uses the channel's mask to ignore RFI.
  */
 [[nodiscard]] noise_stats estimate_noise_power(coarse_channel cc_data,
                                                noise_power_estimate_options    options);
 
 /**
- * Estimate noise power statistics of scan (this can include a flagged/masked estimate)
+ * @brief Estimates noise statistics for an entire scan.
+ * @details Adds the estimation step to the scan's transform pipeline.
  */
 [[nodiscard]] scan estimate_noise_power(scan fil_data, noise_power_estimate_options options);
 
 /**
- * Estimate noise power statistics of an observation target which may include multiple discrete "views" of the target
- *
- * The returned value is an observation_target with valid noise_stats estimate per observation
+ * @brief Estimates noise statistics for all scans in an observation target.
  */
 [[nodiscard]] observation_target estimate_noise_power(observation_target           observations,
                                                       noise_power_estimate_options options);
 
 /**
- * Estimate noise power statistics for each observation target in a cadence
- *
- * The returned value is a cadence with each observation of each target filled in with a valid noise_stat estimate
- *
- * This API may change to return a type better suited for cadences
+ * @brief Estimates noise statistics for all observations in a cadence.
  */
 [[nodiscard]] cadence estimate_noise_power(cadence observations, noise_power_estimate_options options);
 
